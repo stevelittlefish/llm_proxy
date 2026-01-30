@@ -77,6 +77,9 @@
             font-size: 14px;
             word-break: break-word;
         }
+        .info-value.preserve-newlines {
+            white-space: pre-wrap;
+        }
         .code-block {
             background: #2c3e50;
             color: #ecf0f1;
@@ -233,11 +236,11 @@
             <h2>Prompt & Response</h2>
             <div class="info-item" style="margin-bottom: 15px;">
                 <div class="info-label">Prompt</div>
-                <div class="info-value">{{.Prompt}}</div>
+                <div class="info-value preserve-newlines">{{.Prompt}}</div>
             </div>
             <div class="info-item">
                 <div class="info-label">Response</div>
-                <div class="info-value">{{.Response}}</div>
+                <div class="info-value preserve-newlines">{{.Response}}</div>
             </div>
         </div>
 
@@ -261,22 +264,22 @@
         </div>
         {{end}}
 
-        {{if .FrontendResponse}}
-        <div class="section">
-            <h2 class="collapsible" id="header-fe-res" onclick="toggleCollapse('fe-res')">Frontend Response</h2>
-            <div class="collapsible-content" id="content-fe-res">
-                <div class="size-info">Size: {{formatBytes (len .FrontendResponse)}}</div>
-                <pre class="code-block json-content">{{.FrontendResponse}}</pre>
-            </div>
-        </div>
-        {{end}}
-
         {{if .BackendResponse}}
         <div class="section">
             <h2 class="collapsible" id="header-be-res" onclick="toggleCollapse('be-res')">Backend Response</h2>
             <div class="collapsible-content" id="content-be-res">
                 <div class="size-info">Size: {{formatBytes (len .BackendResponse)}}</div>
                 <pre class="code-block json-content">{{.BackendResponse}}</pre>
+            </div>
+        </div>
+        {{end}}
+
+        {{if .FrontendResponse}}
+        <div class="section">
+            <h2 class="collapsible" id="header-fe-res" onclick="toggleCollapse('fe-res')">Frontend Response</h2>
+            <div class="collapsible-content" id="content-fe-res">
+                <div class="size-info">Size: {{formatBytes (len .FrontendResponse)}}</div>
+                <pre class="code-block json-content">{{.FrontendResponse}}</pre>
             </div>
         </div>
         {{end}}
