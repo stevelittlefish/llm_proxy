@@ -56,7 +56,19 @@ func main() {
 	chatHandler := handlers.NewChatHandler(backendInstance, db, cfg)
 	modelsHandler := handlers.NewModelsHandler(backendInstance)
 	showHandler := handlers.NewShowHandler(backendInstance)
-	webHandler := handlers.NewWebHandler(db)
+
+	// Prepare config data for web UI
+	homeData := map[string]interface{}{
+		"BackendType":     cfg.Backend.Type,
+		"BackendEndpoint": cfg.Backend.Endpoint,
+		"ServerHost":      cfg.Server.Host,
+		"ServerPort":      cfg.Server.Port,
+		"Timeout":         cfg.Backend.Timeout,
+		"DatabasePath":    cfg.Database.Path,
+		"EnableCORS":      cfg.Server.EnableCORS,
+	}
+
+	webHandler := handlers.NewWebHandler(db, homeData)
 
 	mux.Handle("/api/generate", generateHandler)
 	mux.Handle("/api/chat", chatHandler)
@@ -64,18 +76,15 @@ func main() {
 	mux.Handle("/api/show", showHandler)
 
 	// Web UI endpoints
-	mux.HandleFunc("/logs", webHandler.IndexHandler)
-	mux.HandleFunc("/logs/details", webHandler.DetailsHandler)
-
-	// Root endpoint - mimics Ollama's behavior
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
 			return
 		}
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, "Ollama (proxy) is running")
+		webHandler.HomeHandler(w, r)
 	})
+	mux.HandleFunc("/logs", webHandler.IndexHandler)
+	mux.HandleFunc("/logs/details", webHandler.DetailsHandler)
 
 	// Health check endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {

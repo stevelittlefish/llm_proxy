@@ -34,12 +34,16 @@ func init() {
 
 // WebHandler handles the web UI for viewing logs
 type WebHandler struct {
-	db *database.DB
+	db     *database.DB
+	config interface{} // Store config data for home page
 }
 
 // NewWebHandler creates a new web handler
-func NewWebHandler(db *database.DB) *WebHandler {
-	return &WebHandler{db: db}
+func NewWebHandler(db *database.DB, config interface{}) *WebHandler {
+	return &WebHandler{
+		db:     db,
+		config: config,
+	}
 }
 
 // truncateString truncates a string to a maximum length
@@ -58,6 +62,16 @@ func formatBytes(size int) string {
 		return fmt.Sprintf("%.2f KB", float64(size)/1024)
 	} else {
 		return fmt.Sprintf("%.2f MB", float64(size)/(1024*1024))
+	}
+}
+
+// HomeHandler serves the home page with configuration info
+func (h *WebHandler) HomeHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := templates.ExecuteTemplate(w, "home.html", h.config); err != nil {
+		log.Printf("Error executing template: %v", err)
+		http.Error(w, "Template error", http.StatusInternalServerError)
+		return
 	}
 }
 
@@ -113,7 +127,7 @@ func (h *WebHandler) IndexHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := templates.ExecuteTemplate(w, "index.html", data); err != nil {
+	if err := templates.ExecuteTemplate(w, "logs.html", data); err != nil {
 		log.Printf("Error executing template: %v", err)
 		http.Error(w, "Template error", http.StatusInternalServerError)
 		return
