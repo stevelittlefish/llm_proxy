@@ -461,6 +461,7 @@ func (o *OpenAIBackend) ListModels(ctx context.Context) (models.ModelsResponse, 
 			Models: []models.ModelInfo{
 				{
 					Name:       "default",
+					Model:      "default",
 					ModifiedAt: time.Now(),
 					Size:       0,
 					Digest:     "",
@@ -482,6 +483,7 @@ func (o *OpenAIBackend) ListModels(ctx context.Context) (models.ModelsResponse, 
 			Models: []models.ModelInfo{
 				{
 					Name:       "default",
+					Model:      "default",
 					ModifiedAt: time.Now(),
 					Size:       0,
 					Digest:     "",
@@ -495,6 +497,7 @@ func (o *OpenAIBackend) ListModels(ctx context.Context) (models.ModelsResponse, 
 	for _, m := range openaiModels.Data {
 		modelInfos = append(modelInfos, models.ModelInfo{
 			Name:       m.ID,
+			Model:      m.ID,
 			ModifiedAt: time.Now(),
 			Size:       0,
 			Digest:     "",

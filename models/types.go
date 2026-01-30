@@ -72,6 +72,7 @@ type ModelsResponse struct {
 // ModelInfo represents information about a model
 type ModelInfo struct {
 	Name       string       `json:"name"`
+	Model      string       `json:"model"` // Duplicate of Name for compatibility
 	ModifiedAt time.Time    `json:"modified_at"`
 	Size       int64        `json:"size"`
 	Digest     string       `json:"digest"`
