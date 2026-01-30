@@ -13,6 +13,7 @@ import (
 	"llm_proxy/config"
 	"llm_proxy/database"
 	"llm_proxy/handlers"
+	"llm_proxy/middleware"
 )
 
 func main() {
@@ -69,9 +70,17 @@ func main() {
 
 	// Start HTTP server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
+
+	// Apply CORS middleware if enabled
+	var handler http.Handler = mux
+	if cfg.Server.EnableCORS {
+		handler = middleware.CORS(handler)
+		log.Printf("CORS enabled")
+	}
+
 	server := &http.Server{
 		Addr:    addr,
-		Handler: mux,
+		Handler: handler,
 	}
 
 	// Handle graceful shutdown
