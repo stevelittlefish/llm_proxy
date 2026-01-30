@@ -47,6 +47,14 @@ func (h *GenerateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Apply model mapping
 	req.Model = h.config.GetModelMapping(req.Model)
 
+	// Log request if verbose mode is enabled
+	if h.config.Server.Verbose {
+		log.Printf("=== Generate Request ===")
+		log.Printf("Model: %s", req.Model)
+		log.Printf("Prompt: %s", req.Prompt)
+		log.Printf("=======================")
+	}
+
 	// Call backend
 	respChan, err := h.backend.Generate(r.Context(), req)
 	if err != nil {
@@ -62,6 +70,11 @@ func (h *GenerateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if f, ok := w.(http.Flusher); ok {
 		f.Flush()
+	}
+
+	// Log when streaming starts in verbose mode
+	if h.config.Server.Verbose {
+		log.Printf("=== Streaming Generate Response ===")
 	}
 
 	// Stream responses
@@ -83,6 +96,13 @@ func (h *GenerateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if resp.Done {
 			break
 		}
+	}
+
+	// Log complete response if verbose mode is enabled
+	if h.config.Server.Verbose {
+		log.Printf("=== Generate Response Complete ===")
+		log.Printf("Full Response: %s", fullResponse.String())
+		log.Printf("==================================")
 	}
 
 	// Log the request/response

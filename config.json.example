@@ -2,7 +2,8 @@
   "server": {
     "host": "0.0.0.0",
     "port": 11434,
-    "enable_cors": true
+    "enable_cors": true,
+    "verbose": false
   },
   "backend": {
     "type": "openai",

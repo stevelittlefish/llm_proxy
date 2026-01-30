@@ -19,6 +19,7 @@ type ServerConfig struct {
 	Host       string `json:"host"`
 	Port       int    `json:"port"`
 	EnableCORS bool   `json:"enable_cors"`
+	Verbose    bool   `json:"verbose"`
 }
 
 // BackendConfig holds the backend service settings

@@ -77,6 +77,9 @@ func main() {
 		handler = middleware.CORS(handler)
 		log.Printf("CORS enabled")
 	}
+	if cfg.Server.Verbose {
+		log.Printf("Verbose mode enabled - requests and responses will be logged to stdout")
+	}
 
 	server := &http.Server{
 		Addr:    addr,
