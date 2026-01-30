@@ -9,10 +9,10 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/steveiliop56/llm_proxy/backend"
-	"github.com/steveiliop56/llm_proxy/config"
-	"github.com/steveiliop56/llm_proxy/database"
-	"github.com/steveiliop56/llm_proxy/handlers"
+	"llm_proxy/backend"
+	"llm_proxy/config"
+	"llm_proxy/database"
+	"llm_proxy/handlers"
 )
 
 func main() {

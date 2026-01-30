@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/steveiliop56/llm_proxy/models"
+	"llm_proxy/models"
 )
 
 // OpenAIBackend implements the Backend interface for OpenAI-compatible APIs

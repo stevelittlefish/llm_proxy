@@ -5,8 +5,8 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/steveiliop56/llm_proxy/backend"
-	"github.com/steveiliop56/llm_proxy/models"
+	"llm_proxy/backend"
+	"llm_proxy/models"
 )
 
 // ModelsHandler handles /api/tags requests

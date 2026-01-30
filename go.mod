@@ -1,4 +1,4 @@
-module github.com/steveiliop56/llm_proxy
+module llm_proxy
 
 go 1.21
 

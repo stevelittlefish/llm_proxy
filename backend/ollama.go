@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/steveiliop56/llm_proxy/models"
+	"llm_proxy/models"
 )
 
 // OllamaBackend implements the Backend interface for Ollama
