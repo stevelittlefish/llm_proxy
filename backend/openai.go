@@ -119,6 +119,8 @@ func (o *OpenAIBackend) handleStreamingCompletion(ctx context.Context, body io.R
 
 		data := strings.TrimPrefix(line, "data: ")
 		if data == "[DONE]" {
+			// Store raw response before sending final message
+			metadata.RawResponse = rawResponse.String()
 			// Send final response with done=true and performance metrics
 			totalDuration := time.Since(startTime).Nanoseconds()
 			respChan <- models.GenerateResponse{
@@ -146,6 +148,8 @@ func (o *OpenAIBackend) handleStreamingCompletion(ctx context.Context, body io.R
 
 			// Check if this is the final chunk with finish_reason
 			if choice.FinishReason != "" && choice.FinishReason != "null" {
+				// Store raw response before sending final message
+				metadata.RawResponse = rawResponse.String()
 				totalDuration := time.Since(startTime).Nanoseconds()
 				respChan <- models.GenerateResponse{
 					Model:              model,
@@ -330,6 +334,8 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 
 		data := strings.TrimPrefix(line, "data: ")
 		if data == "[DONE]" {
+			// Store raw response before sending final message
+			metadata.RawResponse = rawResponse.String()
 			// Send final response with done=true and performance metrics
 			totalDuration := time.Since(startTime).Nanoseconds()
 			respChan <- models.ChatResponse{
@@ -358,6 +364,8 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 
 			// Check if this is the final chunk with finish_reason
 			if choice.FinishReason != "" && choice.FinishReason != "null" {
+				// Store raw response before sending final message
+				metadata.RawResponse = rawResponse.String()
 				totalDuration := time.Since(startTime).Nanoseconds()
 				respChan <- models.ChatResponse{
 					Model:              model,
