@@ -99,7 +99,8 @@ func (o *OpenAIBackend) Generate(ctx context.Context, req models.GenerateRequest
 // handleStreamingCompletion processes streaming OpenAI responses and converts to Ollama format
 func (o *OpenAIBackend) handleStreamingCompletion(ctx context.Context, body io.Reader, respChan chan<- models.GenerateResponse, model string) {
 	scanner := bufio.NewScanner(body)
-	fullResponse := ""
+	startTime := time.Now()
+	tokenCount := 0
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -109,12 +110,19 @@ func (o *OpenAIBackend) handleStreamingCompletion(ctx context.Context, body io.R
 
 		data := strings.TrimPrefix(line, "data: ")
 		if data == "[DONE]" {
-			// Send final response with done=true
+			// Send final response with done=true and performance metrics
+			totalDuration := time.Since(startTime).Nanoseconds()
 			respChan <- models.GenerateResponse{
-				Model:     model,
-				CreatedAt: time.Now(),
-				Response:  "",
-				Done:      true,
+				Model:              model,
+				CreatedAt:          time.Now(),
+				Response:           "",
+				Done:               true,
+				DoneReason:         "stop",
+				TotalDuration:      totalDuration + 1,
+				PromptEvalCount:    1,
+				PromptEvalDuration: 1,
+				EvalCount:          tokenCount,
+				EvalDuration:       totalDuration,
 			}
 			return
 		}
@@ -125,8 +133,30 @@ func (o *OpenAIBackend) handleStreamingCompletion(ctx context.Context, body io.R
 		}
 
 		if len(openaiResp.Choices) > 0 {
-			text := openaiResp.Choices[0].Text
-			fullResponse += text
+			choice := openaiResp.Choices[0]
+
+			// Check if this is the final chunk with finish_reason
+			if choice.FinishReason != "" && choice.FinishReason != "null" {
+				totalDuration := time.Since(startTime).Nanoseconds()
+				respChan <- models.GenerateResponse{
+					Model:              model,
+					CreatedAt:          time.Now(),
+					Response:           "",
+					Done:               true,
+					DoneReason:         choice.FinishReason,
+					TotalDuration:      totalDuration + 1,
+					PromptEvalCount:    1,
+					PromptEvalDuration: 1,
+					EvalCount:          tokenCount,
+					EvalDuration:       totalDuration,
+				}
+				return
+			}
+
+			text := choice.Text
+			if text != "" {
+				tokenCount++
+			}
 
 			ollamaResp := models.GenerateResponse{
 				Model:     model,
@@ -144,11 +174,18 @@ func (o *OpenAIBackend) handleStreamingCompletion(ctx context.Context, body io.R
 	}
 
 	// Send final done message if not already sent
+	totalDuration := time.Since(startTime).Nanoseconds()
 	respChan <- models.GenerateResponse{
-		Model:     model,
-		CreatedAt: time.Now(),
-		Response:  "",
-		Done:      true,
+		Model:              model,
+		CreatedAt:          time.Now(),
+		Response:           "",
+		Done:               true,
+		DoneReason:         "stop",
+		TotalDuration:      totalDuration + 1,
+		PromptEvalCount:    1,
+		PromptEvalDuration: 1,
+		EvalCount:          tokenCount,
+		EvalDuration:       totalDuration,
 	}
 }
 
@@ -160,11 +197,30 @@ func (o *OpenAIBackend) handleNonStreamingCompletion(body io.Reader, respChan ch
 	}
 
 	if len(openaiResp.Choices) > 0 {
+		choice := openaiResp.Choices[0]
+		doneReason := "stop"
+		if choice.FinishReason != "" {
+			doneReason = choice.FinishReason
+		}
+
+		// Extract token counts from usage if available, default to 1
+		promptTokens := 1
+		evalTokens := 1
+		if openaiResp.Usage.PromptTokens > 0 {
+			promptTokens = openaiResp.Usage.PromptTokens
+		}
+		if openaiResp.Usage.CompletionTokens > 0 {
+			evalTokens = openaiResp.Usage.CompletionTokens
+		}
+
 		respChan <- models.GenerateResponse{
-			Model:     model,
-			CreatedAt: time.Now(),
-			Response:  openaiResp.Choices[0].Text,
-			Done:      true,
+			Model:           model,
+			CreatedAt:       time.Now(),
+			Response:        choice.Text,
+			Done:            true,
+			DoneReason:      doneReason,
+			PromptEvalCount: promptTokens,
+			EvalCount:       evalTokens,
 		}
 	}
 }
@@ -238,6 +294,8 @@ func (o *OpenAIBackend) Chat(ctx context.Context, req models.ChatRequest) (<-cha
 // handleStreamingChat processes streaming OpenAI chat responses and converts to Ollama format
 func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader, respChan chan<- models.ChatResponse, model string) {
 	scanner := bufio.NewScanner(body)
+	startTime := time.Now()
+	tokenCount := 0
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -247,12 +305,19 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 
 		data := strings.TrimPrefix(line, "data: ")
 		if data == "[DONE]" {
-			// Send final response with done=true
+			// Send final response with done=true and performance metrics
+			totalDuration := time.Since(startTime).Nanoseconds()
 			respChan <- models.ChatResponse{
-				Model:     model,
-				CreatedAt: time.Now(),
-				Message:   models.Message{Role: "assistant", Content: ""},
-				Done:      true,
+				Model:              model,
+				CreatedAt:          time.Now(),
+				Message:            models.Message{Role: "assistant", Content: ""},
+				Done:               true,
+				DoneReason:         "stop",
+				TotalDuration:      totalDuration + 1,
+				PromptEvalCount:    1,
+				PromptEvalDuration: 1,
+				EvalCount:          tokenCount,
+				EvalDuration:       totalDuration,
 			}
 			return
 		}
@@ -262,31 +327,64 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 			continue
 		}
 
-		if len(openaiResp.Choices) > 0 && openaiResp.Choices[0].Delta != nil {
-			ollamaResp := models.ChatResponse{
-				Model:     model,
-				CreatedAt: time.Now(),
-				Message: models.Message{
-					Role:    openaiResp.Choices[0].Delta.Role,
-					Content: openaiResp.Choices[0].Delta.Content,
-				},
-				Done: false,
+		if len(openaiResp.Choices) > 0 {
+			choice := openaiResp.Choices[0]
+
+			// Check if this is the final chunk with finish_reason
+			if choice.FinishReason != "" && choice.FinishReason != "null" {
+				totalDuration := time.Since(startTime).Nanoseconds()
+				respChan <- models.ChatResponse{
+					Model:              model,
+					CreatedAt:          time.Now(),
+					Message:            models.Message{Role: "assistant", Content: ""},
+					Done:               true,
+					DoneReason:         choice.FinishReason,
+					TotalDuration:      totalDuration + 1,
+					PromptEvalCount:    1,
+					PromptEvalDuration: 1,
+					EvalCount:          tokenCount,
+					EvalDuration:       totalDuration,
+				}
+				return
 			}
 
-			select {
-			case respChan <- ollamaResp:
-			case <-ctx.Done():
-				return
+			if choice.Delta != nil {
+				if choice.Delta.Content != "" {
+					tokenCount++
+				}
+
+				ollamaResp := models.ChatResponse{
+					Model:     model,
+					CreatedAt: time.Now(),
+					Message: models.Message{
+						Role:    choice.Delta.Role,
+						Content: choice.Delta.Content,
+					},
+					Done: false,
+				}
+
+				select {
+				case respChan <- ollamaResp:
+				case <-ctx.Done():
+					return
+				}
 			}
 		}
 	}
 
 	// Send final done message if not already sent
+	totalDuration := time.Since(startTime).Nanoseconds()
 	respChan <- models.ChatResponse{
-		Model:     model,
-		CreatedAt: time.Now(),
-		Message:   models.Message{Role: "assistant", Content: ""},
-		Done:      true,
+		Model:              model,
+		CreatedAt:          time.Now(),
+		Message:            models.Message{Role: "assistant", Content: ""},
+		Done:               true,
+		DoneReason:         "stop",
+		TotalDuration:      totalDuration + 1,
+		PromptEvalCount:    1,
+		PromptEvalDuration: 1,
+		EvalCount:          tokenCount,
+		EvalDuration:       totalDuration,
 	}
 }
 
@@ -298,11 +396,30 @@ func (o *OpenAIBackend) handleNonStreamingChat(body io.Reader, respChan chan<- m
 	}
 
 	if len(openaiResp.Choices) > 0 && openaiResp.Choices[0].Message != nil {
+		choice := openaiResp.Choices[0]
+		doneReason := "stop"
+		if choice.FinishReason != "" {
+			doneReason = choice.FinishReason
+		}
+
+		// Extract token counts from usage if available, default to 1
+		promptTokens := 1
+		evalTokens := 1
+		if openaiResp.Usage.PromptTokens > 0 {
+			promptTokens = openaiResp.Usage.PromptTokens
+		}
+		if openaiResp.Usage.CompletionTokens > 0 {
+			evalTokens = openaiResp.Usage.CompletionTokens
+		}
+
 		respChan <- models.ChatResponse{
-			Model:     model,
-			CreatedAt: time.Now(),
-			Message:   *openaiResp.Choices[0].Message,
-			Done:      true,
+			Model:           model,
+			CreatedAt:       time.Now(),
+			Message:         *choice.Message,
+			Done:            true,
+			DoneReason:      doneReason,
+			PromptEvalCount: promptTokens,
+			EvalCount:       evalTokens,
 		}
 	}
 }

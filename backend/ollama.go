@@ -124,8 +124,11 @@ func (o *OllamaBackend) Chat(ctx context.Context, req models.ChatRequest) (<-cha
 
 		scanner := bufio.NewScanner(resp.Body)
 		for scanner.Scan() {
+			// Log raw response from Ollama for debugging
+			rawBytes := scanner.Bytes()
+
 			var chatResp models.ChatResponse
-			if err := json.Unmarshal(scanner.Bytes(), &chatResp); err != nil {
+			if err := json.Unmarshal(rawBytes, &chatResp); err != nil {
 				// Log error but continue
 				continue
 			}

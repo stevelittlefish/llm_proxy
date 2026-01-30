@@ -23,6 +23,7 @@ type GenerateResponse struct {
 	CreatedAt          time.Time `json:"created_at"`
 	Response           string    `json:"response"`
 	Done               bool      `json:"done"`
+	DoneReason         string    `json:"done_reason,omitempty"`
 	Context            []int     `json:"context,omitempty"`
 	TotalDuration      int64     `json:"total_duration,omitempty"`
 	LoadDuration       int64     `json:"load_duration,omitempty"`
@@ -54,6 +55,7 @@ type ChatResponse struct {
 	CreatedAt          time.Time `json:"created_at"`
 	Message            Message   `json:"message"`
 	Done               bool      `json:"done"`
+	DoneReason         string    `json:"done_reason,omitempty"`
 	TotalDuration      int64     `json:"total_duration,omitempty"`
 	LoadDuration       int64     `json:"load_duration,omitempty"`
 	PromptEvalCount    int       `json:"prompt_eval_count,omitempty"`
