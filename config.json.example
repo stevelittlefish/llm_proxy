@@ -14,12 +14,5 @@
   },
   "database": {
     "path": "./data/llm_proxy.db"
-  },
-  "models": {
-    "default": "qwen3-32b",
-    "mappings": {
-      "qwen-32b": "qwen3-32b-q4_k_m",
-      "codellama": "codellama-7b"
-    }
   }
 }

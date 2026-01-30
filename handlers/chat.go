@@ -53,9 +53,6 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Apply model mapping
-	req.Model = h.config.GetModelMapping(req.Model)
-
 	// Log request messages if enabled
 	if h.config.Server.LogMessages {
 		log.Printf("=== Chat Request ===")

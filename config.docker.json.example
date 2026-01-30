@@ -14,12 +14,5 @@
   },
   "database": {
     "path": "/app/data/llm_proxy.db"
-  },
-  "models": {
-    "default": "llama2",
-    "mappings": {
-      "llama2": "llama-2-7b-chat",
-      "codellama": "codellama-7b"
-    }
   }
 }

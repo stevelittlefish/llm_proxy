@@ -11,7 +11,6 @@ type Config struct {
 	Server   ServerConfig   `json:"server"`
 	Backend  BackendConfig  `json:"backend"`
 	Database DatabaseConfig `json:"database"`
-	Models   ModelsConfig   `json:"models"`
 }
 
 // ServerConfig holds the server settings
@@ -36,21 +35,18 @@ type DatabaseConfig struct {
 	Path string `json:"path"`
 }
 
-// ModelsConfig holds model-related settings
-type ModelsConfig struct {
-	Default  string            `json:"default"`
-	Mappings map[string]string `json:"mappings"`
-}
-
 // Load reads and parses the configuration file
 func Load(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
+	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
+	defer file.Close()
 
 	var config Config
-	if err := json.Unmarshal(data, &config); err != nil {
+	decoder := json.NewDecoder(file)
+	decoder.DisallowUnknownFields() // Fail on unknown keys
+	if err := decoder.Decode(&config); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
@@ -74,12 +70,4 @@ func Load(path string) (*Config, error) {
 	}
 
 	return &config, nil
-}
-
-// GetModelMapping returns the mapped model name, or the original if no mapping exists
-func (c *Config) GetModelMapping(model string) string {
-	if mapped, ok := c.Models.Mappings[model]; ok {
-		return mapped
-	}
-	return model
 }
