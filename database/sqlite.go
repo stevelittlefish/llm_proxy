@@ -27,6 +27,8 @@ type LogEntry struct {
 	Stream           bool
 	BackendType      string
 	Error            string
+	FrontendURL      string // Frontend URL that received the request
+	BackendURL       string // Backend URL that was called
 	FrontendRequest  string // Raw frontend request JSON
 	FrontendResponse string // Raw frontend response JSON
 	BackendRequest   string // Raw backend request JSON
@@ -52,7 +54,7 @@ func New(path string) (*DB, error) {
 // initSchema creates the required tables if they don't exist
 func (db *DB) initSchema() error {
 	schema := `
-	CREATE TABLE IF NOT EXISTS logs (
+	CREATE TABLE IF NOT EXISTS request (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		timestamp DATETIME NOT NULL,
 		endpoint TEXT NOT NULL,
@@ -65,15 +67,17 @@ func (db *DB) initSchema() error {
 		stream BOOLEAN,
 		backend_type TEXT,
 		error TEXT,
+		frontend_url TEXT,
+		backend_url TEXT,
 		frontend_request TEXT,
 		frontend_response TEXT,
 		backend_request TEXT,
 		backend_response TEXT
 	);
 
-	CREATE INDEX IF NOT EXISTS idx_timestamp ON logs(timestamp);
-	CREATE INDEX IF NOT EXISTS idx_endpoint ON logs(endpoint);
-	CREATE INDEX IF NOT EXISTS idx_model ON logs(model);
+	CREATE INDEX IF NOT EXISTS idx_timestamp ON request(timestamp);
+	CREATE INDEX IF NOT EXISTS idx_endpoint ON request(endpoint);
+	CREATE INDEX IF NOT EXISTS idx_model ON request(model);
 	`
 
 	_, err := db.conn.Exec(schema)
@@ -83,8 +87,8 @@ func (db *DB) initSchema() error {
 // Log inserts a log entry into the database
 func (db *DB) Log(entry LogEntry) error {
 	query := `
-		INSERT INTO logs (timestamp, endpoint, method, model, prompt, response, status_code, latency_ms, stream, backend_type, error, frontend_request, frontend_response, backend_request, backend_response)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO request (timestamp, endpoint, method, model, prompt, response, status_code, latency_ms, stream, backend_type, error, frontend_url, backend_url, frontend_request, frontend_response, backend_request, backend_response)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	_, err := db.conn.Exec(
@@ -100,6 +104,8 @@ func (db *DB) Log(entry LogEntry) error {
 		entry.Stream,
 		entry.BackendType,
 		entry.Error,
+		entry.FrontendURL,
+		entry.BackendURL,
 		entry.FrontendRequest,
 		entry.FrontendResponse,
 		entry.BackendRequest,

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -70,7 +71,7 @@ func (h *GenerateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	respChan, backendMeta, err := h.backend.Generate(r.Context(), req)
 	if err != nil {
 		log.Printf("Backend error: %v", err)
-		h.logRequest(startTime, req, "", http.StatusInternalServerError, err.Error(), string(frontendReqJSON), "", backendMeta.RawRequest, backendMeta.RawResponse)
+		h.logRequest(startTime, req, "", http.StatusInternalServerError, err.Error(), string(frontendReqJSON), "", backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -134,11 +135,11 @@ func (h *GenerateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	frontendRespJSON, _ := json.Marshal(responses)
 
 	// Log the request/response
-	h.logRequest(startTime, req, fullResponse.String(), http.StatusOK, "", string(frontendReqJSON), string(frontendRespJSON), backendMeta.RawRequest, backendMeta.RawResponse)
+	h.logRequest(startTime, req, fullResponse.String(), http.StatusOK, "", string(frontendReqJSON), string(frontendRespJSON), backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL)
 }
 
 // logRequest logs the request and response to the database
-func (h *GenerateHandler) logRequest(startTime time.Time, req models.GenerateRequest, response string, statusCode int, errMsg string, frontendReq string, frontendResp string, backendReq string, backendResp string) {
+func (h *GenerateHandler) logRequest(startTime time.Time, req models.GenerateRequest, response string, statusCode int, errMsg string, frontendReq string, frontendResp string, backendReq string, backendResp string, backendURL string) {
 	latency := time.Since(startTime).Milliseconds()
 
 	entry := database.LogEntry{
@@ -153,6 +154,8 @@ func (h *GenerateHandler) logRequest(startTime time.Time, req models.GenerateReq
 		Stream:           req.Stream,
 		BackendType:      h.config.Backend.Type,
 		Error:            errMsg,
+		FrontendURL:      fmt.Sprintf("http://%s:%d/api/generate", h.config.Server.Host, h.config.Server.Port),
+		BackendURL:       backendURL,
 		FrontendRequest:  frontendReq,
 		FrontendResponse: frontendResp,
 		BackendRequest:   backendReq,

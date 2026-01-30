@@ -43,8 +43,9 @@ func (o *OllamaBackend) Generate(ctx context.Context, req models.GenerateRequest
 
 	// Store raw backend request
 	metadata.RawRequest = string(data)
+	metadata.URL = o.endpoint + "/api/generate"
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", o.endpoint+"/api/generate", bytes.NewReader(data))
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", metadata.URL, bytes.NewReader(data))
 	if err != nil {
 		close(respChan)
 		return respChan, metadata, fmt.Errorf("failed to create request: %w", err)
@@ -115,8 +116,9 @@ func (o *OllamaBackend) Chat(ctx context.Context, req models.ChatRequest) (<-cha
 
 	// Store raw backend request
 	metadata.RawRequest = string(data)
+	metadata.URL = o.endpoint + "/api/chat"
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", o.endpoint+"/api/chat", bytes.NewReader(data))
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", metadata.URL, bytes.NewReader(data))
 	if err != nil {
 		close(respChan)
 		return respChan, metadata, fmt.Errorf("failed to create request: %w", err)

@@ -8,6 +8,7 @@ import (
 
 // BackendMetadata contains raw request/response data from backend calls
 type BackendMetadata struct {
+	URL         string // Full URL called on the backend
 	RawRequest  string // Raw JSON sent to backend
 	RawResponse string // Raw response data received from backend
 }

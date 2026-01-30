@@ -63,8 +63,9 @@ func (o *OpenAIBackend) Generate(ctx context.Context, req models.GenerateRequest
 
 	// Store raw backend request
 	metadata.RawRequest = string(data)
+	metadata.URL = o.endpoint + "/v1/completions"
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", o.endpoint+"/v1/completions", bytes.NewReader(data))
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", metadata.URL, bytes.NewReader(data))
 	if err != nil {
 		close(respChan)
 		return respChan, metadata, fmt.Errorf("failed to create request: %w", err)
@@ -278,8 +279,9 @@ func (o *OpenAIBackend) Chat(ctx context.Context, req models.ChatRequest) (<-cha
 
 	// Store raw backend request
 	metadata.RawRequest = string(data)
+	metadata.URL = o.endpoint + "/v1/chat/completions"
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", o.endpoint+"/v1/chat/completions", bytes.NewReader(data))
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", metadata.URL, bytes.NewReader(data))
 	if err != nil {
 		close(respChan)
 		return respChan, metadata, fmt.Errorf("failed to create request: %w", err)
