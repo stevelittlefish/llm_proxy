@@ -1,0 +1,21 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 11434
+  },
+  "backend": {
+    "type": "openai",
+    "endpoint": "http://localhost:8080",
+    "timeout": 300
+  },
+  "database": {
+    "path": "./llm_proxy.db"
+  },
+  "models": {
+    "default": "llama2",
+    "mappings": {
+      "llama2": "llama-2-7b-chat",
+      "codellama": "codellama-7b"
+    }
+  }
+}
