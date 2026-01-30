@@ -63,11 +63,14 @@ func (h *GenerateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Printf("=======================")
 	}
 
+	// Capture frontend request as raw JSON
+	frontendReqJSON, _ := json.Marshal(req)
+
 	// Call backend
-	respChan, err := h.backend.Generate(r.Context(), req)
+	respChan, backendMeta, err := h.backend.Generate(r.Context(), req)
 	if err != nil {
 		log.Printf("Backend error: %v", err)
-		h.logRequest(startTime, req, "", http.StatusInternalServerError, err.Error())
+		h.logRequest(startTime, req, "", http.StatusInternalServerError, err.Error(), string(frontendReqJSON), "", backendMeta.RawRequest, backendMeta.RawResponse)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -127,26 +130,33 @@ func (h *GenerateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Capture frontend response as raw JSON
+	frontendRespJSON, _ := json.Marshal(responses)
+
 	// Log the request/response
-	h.logRequest(startTime, req, fullResponse.String(), http.StatusOK, "")
+	h.logRequest(startTime, req, fullResponse.String(), http.StatusOK, "", string(frontendReqJSON), string(frontendRespJSON), backendMeta.RawRequest, backendMeta.RawResponse)
 }
 
 // logRequest logs the request and response to the database
-func (h *GenerateHandler) logRequest(startTime time.Time, req models.GenerateRequest, response string, statusCode int, errMsg string) {
+func (h *GenerateHandler) logRequest(startTime time.Time, req models.GenerateRequest, response string, statusCode int, errMsg string, frontendReq string, frontendResp string, backendReq string, backendResp string) {
 	latency := time.Since(startTime).Milliseconds()
 
 	entry := database.LogEntry{
-		Timestamp:   startTime,
-		Endpoint:    "/api/generate",
-		Method:      "POST",
-		Model:       req.Model,
-		Prompt:      req.Prompt,
-		Response:    response,
-		StatusCode:  statusCode,
-		LatencyMs:   latency,
-		Stream:      req.Stream,
-		BackendType: h.config.Backend.Type,
-		Error:       errMsg,
+		Timestamp:        startTime,
+		Endpoint:         "/api/generate",
+		Method:           "POST",
+		Model:            req.Model,
+		Prompt:           req.Prompt,
+		Response:         response,
+		StatusCode:       statusCode,
+		LatencyMs:        latency,
+		Stream:           req.Stream,
+		BackendType:      h.config.Backend.Type,
+		Error:            errMsg,
+		FrontendRequest:  frontendReq,
+		FrontendResponse: frontendResp,
+		BackendRequest:   backendReq,
+		BackendResponse:  backendResp,
 	}
 
 	if err := h.db.Log(entry); err != nil {

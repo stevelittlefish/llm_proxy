@@ -15,18 +15,22 @@ type DB struct {
 
 // LogEntry represents a logged request/response
 type LogEntry struct {
-	ID          int64
-	Timestamp   time.Time
-	Endpoint    string
-	Method      string
-	Model       string
-	Prompt      string
-	Response    string
-	StatusCode  int
-	LatencyMs   int64
-	Stream      bool
-	BackendType string
-	Error       string
+	ID               int64
+	Timestamp        time.Time
+	Endpoint         string
+	Method           string
+	Model            string
+	Prompt           string
+	Response         string
+	StatusCode       int
+	LatencyMs        int64
+	Stream           bool
+	BackendType      string
+	Error            string
+	FrontendRequest  string // Raw frontend request JSON
+	FrontendResponse string // Raw frontend response JSON
+	BackendRequest   string // Raw backend request JSON
+	BackendResponse  string // Raw backend response data
 }
 
 // New creates a new database connection and initializes the schema
@@ -60,7 +64,11 @@ func (db *DB) initSchema() error {
 		latency_ms INTEGER,
 		stream BOOLEAN,
 		backend_type TEXT,
-		error TEXT
+		error TEXT,
+		frontend_request TEXT,
+		frontend_response TEXT,
+		backend_request TEXT,
+		backend_response TEXT
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_timestamp ON logs(timestamp);
@@ -75,8 +83,8 @@ func (db *DB) initSchema() error {
 // Log inserts a log entry into the database
 func (db *DB) Log(entry LogEntry) error {
 	query := `
-		INSERT INTO logs (timestamp, endpoint, method, model, prompt, response, status_code, latency_ms, stream, backend_type, error)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO logs (timestamp, endpoint, method, model, prompt, response, status_code, latency_ms, stream, backend_type, error, frontend_request, frontend_response, backend_request, backend_response)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	_, err := db.conn.Exec(
@@ -92,6 +100,10 @@ func (db *DB) Log(entry LogEntry) error {
 		entry.Stream,
 		entry.BackendType,
 		entry.Error,
+		entry.FrontendRequest,
+		entry.FrontendResponse,
+		entry.BackendRequest,
+		entry.BackendResponse,
 	)
 
 	if err != nil {

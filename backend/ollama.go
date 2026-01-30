@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"llm_proxy/models"
@@ -30,19 +31,23 @@ func NewOllamaBackend(endpoint string, timeout int) *OllamaBackend {
 }
 
 // Generate handles text generation requests by forwarding to Ollama
-func (o *OllamaBackend) Generate(ctx context.Context, req models.GenerateRequest) (<-chan models.GenerateResponse, error) {
+func (o *OllamaBackend) Generate(ctx context.Context, req models.GenerateRequest) (<-chan models.GenerateResponse, *BackendMetadata, error) {
 	respChan := make(chan models.GenerateResponse, 10)
+	metadata := &BackendMetadata{}
 
 	data, err := json.Marshal(req)
 	if err != nil {
 		close(respChan)
-		return respChan, fmt.Errorf("failed to marshal request: %w", err)
+		return respChan, metadata, fmt.Errorf("failed to marshal request: %w", err)
 	}
+
+	// Store raw backend request
+	metadata.RawRequest = string(data)
 
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", o.endpoint+"/api/generate", bytes.NewReader(data))
 	if err != nil {
 		close(respChan)
-		return respChan, fmt.Errorf("failed to create request: %w", err)
+		return respChan, metadata, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
@@ -50,13 +55,15 @@ func (o *OllamaBackend) Generate(ctx context.Context, req models.GenerateRequest
 	resp, err := o.client.Do(httpReq)
 	if err != nil {
 		close(respChan)
-		return respChan, fmt.Errorf("request failed: %w", err)
+		return respChan, metadata, fmt.Errorf("request failed: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
+		metadata.RawResponse = string(body)
 		close(respChan)
-		return respChan, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return respChan, metadata, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
 	// Handle streaming response
@@ -64,8 +71,13 @@ func (o *OllamaBackend) Generate(ctx context.Context, req models.GenerateRequest
 		defer resp.Body.Close()
 		defer close(respChan)
 
+		var rawResponse strings.Builder
 		scanner := bufio.NewScanner(resp.Body)
 		for scanner.Scan() {
+			line := scanner.Text()
+			rawResponse.WriteString(line)
+			rawResponse.WriteString("\n")
+
 			var genResp models.GenerateResponse
 			if err := json.Unmarshal(scanner.Bytes(), &genResp); err != nil {
 				// Log error but continue
@@ -75,32 +87,39 @@ func (o *OllamaBackend) Generate(ctx context.Context, req models.GenerateRequest
 			select {
 			case respChan <- genResp:
 			case <-ctx.Done():
+				metadata.RawResponse = rawResponse.String()
 				return
 			}
 
 			if genResp.Done {
+				metadata.RawResponse = rawResponse.String()
 				return
 			}
 		}
+		metadata.RawResponse = rawResponse.String()
 	}()
 
-	return respChan, nil
+	return respChan, metadata, nil
 }
 
 // Chat handles chat completion requests by forwarding to Ollama
-func (o *OllamaBackend) Chat(ctx context.Context, req models.ChatRequest) (<-chan models.ChatResponse, error) {
+func (o *OllamaBackend) Chat(ctx context.Context, req models.ChatRequest) (<-chan models.ChatResponse, *BackendMetadata, error) {
 	respChan := make(chan models.ChatResponse, 10)
+	metadata := &BackendMetadata{}
 
 	data, err := json.Marshal(req)
 	if err != nil {
 		close(respChan)
-		return respChan, fmt.Errorf("failed to marshal request: %w", err)
+		return respChan, metadata, fmt.Errorf("failed to marshal request: %w", err)
 	}
+
+	// Store raw backend request
+	metadata.RawRequest = string(data)
 
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", o.endpoint+"/api/chat", bytes.NewReader(data))
 	if err != nil {
 		close(respChan)
-		return respChan, fmt.Errorf("failed to create request: %w", err)
+		return respChan, metadata, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
@@ -108,13 +127,15 @@ func (o *OllamaBackend) Chat(ctx context.Context, req models.ChatRequest) (<-cha
 	resp, err := o.client.Do(httpReq)
 	if err != nil {
 		close(respChan)
-		return respChan, fmt.Errorf("request failed: %w", err)
+		return respChan, metadata, fmt.Errorf("request failed: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
+		metadata.RawResponse = string(body)
 		close(respChan)
-		return respChan, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return respChan, metadata, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
 	// Handle streaming response
@@ -122,10 +143,13 @@ func (o *OllamaBackend) Chat(ctx context.Context, req models.ChatRequest) (<-cha
 		defer resp.Body.Close()
 		defer close(respChan)
 
+		var rawResponse strings.Builder
 		scanner := bufio.NewScanner(resp.Body)
 		for scanner.Scan() {
 			// Log raw response from Ollama for debugging
 			rawBytes := scanner.Bytes()
+			rawResponse.WriteString(string(rawBytes))
+			rawResponse.WriteString("\n")
 
 			var chatResp models.ChatResponse
 			if err := json.Unmarshal(rawBytes, &chatResp); err != nil {
@@ -148,16 +172,19 @@ func (o *OllamaBackend) Chat(ctx context.Context, req models.ChatRequest) (<-cha
 			select {
 			case respChan <- chatResp:
 			case <-ctx.Done():
+				metadata.RawResponse = rawResponse.String()
 				return
 			}
 
 			if chatResp.Done {
+				metadata.RawResponse = rawResponse.String()
 				return
 			}
 		}
+		metadata.RawResponse = rawResponse.String()
 	}()
 
-	return respChan, nil
+	return respChan, metadata, nil
 }
 
 // ListModels returns available models from Ollama

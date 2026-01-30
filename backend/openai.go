@@ -31,8 +31,9 @@ func NewOpenAIBackend(endpoint string, timeout int) *OpenAIBackend {
 }
 
 // Generate handles text generation requests by translating to OpenAI format
-func (o *OpenAIBackend) Generate(ctx context.Context, req models.GenerateRequest) (<-chan models.GenerateResponse, error) {
+func (o *OpenAIBackend) Generate(ctx context.Context, req models.GenerateRequest) (<-chan models.GenerateResponse, *BackendMetadata, error) {
 	respChan := make(chan models.GenerateResponse, 10)
+	metadata := &BackendMetadata{}
 
 	// Translate Ollama request to OpenAI completion request
 	openaiReq := models.OpenAICompletionRequest{
@@ -57,13 +58,16 @@ func (o *OpenAIBackend) Generate(ctx context.Context, req models.GenerateRequest
 	data, err := json.Marshal(openaiReq)
 	if err != nil {
 		close(respChan)
-		return respChan, fmt.Errorf("failed to marshal request: %w", err)
+		return respChan, metadata, fmt.Errorf("failed to marshal request: %w", err)
 	}
+
+	// Store raw backend request
+	metadata.RawRequest = string(data)
 
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", o.endpoint+"/v1/completions", bytes.NewReader(data))
 	if err != nil {
 		close(respChan)
-		return respChan, fmt.Errorf("failed to create request: %w", err)
+		return respChan, metadata, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
@@ -71,14 +75,15 @@ func (o *OpenAIBackend) Generate(ctx context.Context, req models.GenerateRequest
 	resp, err := o.client.Do(httpReq)
 	if err != nil {
 		close(respChan)
-		return respChan, fmt.Errorf("request failed: %w", err)
+		return respChan, metadata, fmt.Errorf("request failed: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
+		metadata.RawResponse = string(body)
 		close(respChan)
-		return respChan, fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode, string(body))
+		return respChan, metadata, fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	// Handle streaming response
@@ -87,23 +92,27 @@ func (o *OpenAIBackend) Generate(ctx context.Context, req models.GenerateRequest
 		defer close(respChan)
 
 		if req.Stream {
-			o.handleStreamingCompletion(ctx, resp.Body, respChan, req.Model)
+			o.handleStreamingCompletion(ctx, resp.Body, respChan, req.Model, metadata)
 		} else {
-			o.handleNonStreamingCompletion(resp.Body, respChan, req.Model)
+			o.handleNonStreamingCompletion(resp.Body, respChan, req.Model, metadata)
 		}
 	}()
 
-	return respChan, nil
+	return respChan, metadata, nil
 }
 
 // handleStreamingCompletion processes streaming OpenAI responses and converts to Ollama format
-func (o *OpenAIBackend) handleStreamingCompletion(ctx context.Context, body io.Reader, respChan chan<- models.GenerateResponse, model string) {
+func (o *OpenAIBackend) handleStreamingCompletion(ctx context.Context, body io.Reader, respChan chan<- models.GenerateResponse, model string, metadata *BackendMetadata) {
 	scanner := bufio.NewScanner(body)
 	startTime := time.Now()
 	tokenCount := 0
+	var rawResponse strings.Builder
 
 	for scanner.Scan() {
 		line := scanner.Text()
+		rawResponse.WriteString(line)
+		rawResponse.WriteString("\n")
+
 		if !strings.HasPrefix(line, "data: ") {
 			continue
 		}
@@ -175,6 +184,7 @@ func (o *OpenAIBackend) handleStreamingCompletion(ctx context.Context, body io.R
 
 	// Send final done message if not already sent
 	totalDuration := time.Since(startTime).Nanoseconds()
+	metadata.RawResponse = rawResponse.String()
 	respChan <- models.GenerateResponse{
 		Model:              model,
 		CreatedAt:          time.Now(),
@@ -190,9 +200,15 @@ func (o *OpenAIBackend) handleStreamingCompletion(ctx context.Context, body io.R
 }
 
 // handleNonStreamingCompletion processes non-streaming OpenAI responses
-func (o *OpenAIBackend) handleNonStreamingCompletion(body io.Reader, respChan chan<- models.GenerateResponse, model string) {
+func (o *OpenAIBackend) handleNonStreamingCompletion(body io.Reader, respChan chan<- models.GenerateResponse, model string, metadata *BackendMetadata) {
+	bodyBytes, err := io.ReadAll(body)
+	if err != nil {
+		return
+	}
+	metadata.RawResponse = string(bodyBytes)
+
 	var openaiResp models.OpenAICompletionResponse
-	if err := json.NewDecoder(body).Decode(&openaiResp); err != nil {
+	if err := json.Unmarshal(bodyBytes, &openaiResp); err != nil {
 		return
 	}
 
@@ -226,8 +242,9 @@ func (o *OpenAIBackend) handleNonStreamingCompletion(body io.Reader, respChan ch
 }
 
 // Chat handles chat completion requests by translating to OpenAI format
-func (o *OpenAIBackend) Chat(ctx context.Context, req models.ChatRequest) (<-chan models.ChatResponse, error) {
+func (o *OpenAIBackend) Chat(ctx context.Context, req models.ChatRequest) (<-chan models.ChatResponse, *BackendMetadata, error) {
 	respChan := make(chan models.ChatResponse, 10)
+	metadata := &BackendMetadata{}
 
 	// Translate Ollama request to OpenAI chat request
 	openaiReq := models.OpenAIChatRequest{
@@ -252,13 +269,16 @@ func (o *OpenAIBackend) Chat(ctx context.Context, req models.ChatRequest) (<-cha
 	data, err := json.Marshal(openaiReq)
 	if err != nil {
 		close(respChan)
-		return respChan, fmt.Errorf("failed to marshal request: %w", err)
+		return respChan, metadata, fmt.Errorf("failed to marshal request: %w", err)
 	}
+
+	// Store raw backend request
+	metadata.RawRequest = string(data)
 
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", o.endpoint+"/v1/chat/completions", bytes.NewReader(data))
 	if err != nil {
 		close(respChan)
-		return respChan, fmt.Errorf("failed to create request: %w", err)
+		return respChan, metadata, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
@@ -266,14 +286,15 @@ func (o *OpenAIBackend) Chat(ctx context.Context, req models.ChatRequest) (<-cha
 	resp, err := o.client.Do(httpReq)
 	if err != nil {
 		close(respChan)
-		return respChan, fmt.Errorf("request failed: %w", err)
+		return respChan, metadata, fmt.Errorf("request failed: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
+		metadata.RawResponse = string(body)
 		close(respChan)
-		return respChan, fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode, string(body))
+		return respChan, metadata, fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	// Handle streaming response
@@ -282,23 +303,27 @@ func (o *OpenAIBackend) Chat(ctx context.Context, req models.ChatRequest) (<-cha
 		defer close(respChan)
 
 		if req.Stream {
-			o.handleStreamingChat(ctx, resp.Body, respChan, req.Model)
+			o.handleStreamingChat(ctx, resp.Body, respChan, req.Model, metadata)
 		} else {
-			o.handleNonStreamingChat(resp.Body, respChan, req.Model)
+			o.handleNonStreamingChat(resp.Body, respChan, req.Model, metadata)
 		}
 	}()
 
-	return respChan, nil
+	return respChan, metadata, nil
 }
 
 // handleStreamingChat processes streaming OpenAI chat responses and converts to Ollama format
-func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader, respChan chan<- models.ChatResponse, model string) {
+func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader, respChan chan<- models.ChatResponse, model string, metadata *BackendMetadata) {
 	scanner := bufio.NewScanner(body)
 	startTime := time.Now()
 	tokenCount := 0
+	var rawResponse strings.Builder
 
 	for scanner.Scan() {
 		line := scanner.Text()
+		rawResponse.WriteString(line)
+		rawResponse.WriteString("\n")
+
 		if !strings.HasPrefix(line, "data: ") {
 			continue
 		}
@@ -382,6 +407,7 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 
 	// Send final done message if not already sent
 	totalDuration := time.Since(startTime).Nanoseconds()
+	metadata.RawResponse = rawResponse.String()
 	respChan <- models.ChatResponse{
 		Model:              model,
 		CreatedAt:          time.Now(),
@@ -398,11 +424,17 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 }
 
 // handleNonStreamingChat processes non-streaming OpenAI chat responses
-func (o *OpenAIBackend) handleNonStreamingChat(body io.Reader, respChan chan<- models.ChatResponse, model string) {
+func (o *OpenAIBackend) handleNonStreamingChat(body io.Reader, respChan chan<- models.ChatResponse, model string, metadata *BackendMetadata) {
 	startTime := time.Now()
 
+	bodyBytes, err := io.ReadAll(body)
+	if err != nil {
+		return
+	}
+	metadata.RawResponse = string(bodyBytes)
+
 	var openaiResp models.OpenAIChatResponse
-	if err := json.NewDecoder(body).Decode(&openaiResp); err != nil {
+	if err := json.Unmarshal(bodyBytes, &openaiResp); err != nil {
 		return
 	}
 
