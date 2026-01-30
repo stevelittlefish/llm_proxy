@@ -131,11 +131,20 @@ func (h *GenerateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Capture frontend response as raw JSON
-	frontendRespJSON, _ := json.Marshal(responses)
+	// Capture frontend response as newline-delimited JSON (matching actual streamed format)
+	var frontendRespBuilder strings.Builder
+	for i, resp := range responses {
+		respJSON, err := json.Marshal(resp)
+		if err == nil {
+			frontendRespBuilder.Write(respJSON)
+			if i < len(responses)-1 {
+				frontendRespBuilder.WriteString("\n")
+			}
+		}
+	}
 
 	// Log the request/response
-	h.logRequest(startTime, req, fullResponse.String(), http.StatusOK, "", string(frontendReqJSON), string(frontendRespJSON), backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL)
+	h.logRequest(startTime, req, fullResponse.String(), http.StatusOK, "", string(frontendReqJSON), frontendRespBuilder.String(), backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL)
 }
 
 // logRequest logs the request and response to the database
