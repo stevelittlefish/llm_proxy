@@ -3,7 +3,9 @@
     "host": "0.0.0.0",
     "port": 11434,
     "enable_cors": true,
-    "verbose": false
+    "log_messages": false,
+    "log_raw_requests": false,
+    "log_raw_responses": false
   },
   "backend": {
     "type": "openai",

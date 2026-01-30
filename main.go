@@ -77,8 +77,14 @@ func main() {
 		handler = middleware.CORS(handler)
 		log.Printf("CORS enabled")
 	}
-	if cfg.Server.Verbose {
-		log.Printf("Verbose mode enabled - requests and responses will be logged to stdout")
+	if cfg.Server.LogMessages {
+		log.Printf("Message logging enabled - message content will be logged to stdout")
+	}
+	if cfg.Server.LogRawRequests {
+		log.Printf("Raw request logging enabled - raw JSON requests will be logged to stdout")
+	}
+	if cfg.Server.LogRawResponses {
+		log.Printf("Raw response logging enabled - raw JSON responses will be logged to stdout")
 	}
 
 	server := &http.Server{

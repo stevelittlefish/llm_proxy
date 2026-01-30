@@ -45,7 +45,11 @@ Create a `config.json` file based on the provided example:
 {
   "server": {
     "host": "0.0.0.0",
-    "port": 11434
+    "port": 11434,
+    "enable_cors": true,
+    "log_messages": false,
+    "log_raw_requests": false,
+    "log_raw_responses": false
   },
   "backend": {
     "type": "openai",
@@ -70,6 +74,18 @@ Create a `config.json` file based on the provided example:
 #### Server
 - `host`: IP address to bind to (default: `0.0.0.0`)
 - `port`: Port to listen on (default: `11434` - Ollama's default port)
+- `enable_cors`: Enable CORS middleware (default: `false`)
+- `log_messages`: Log message content in human-readable format to stdout (default: `false`)
+- `log_raw_requests`: Log raw JSON request payloads (pretty-printed) to stdout (default: `false`)
+- `log_raw_responses`: Log raw JSON response payloads (pretty-printed) to stdout (default: `false`)
+
+**Logging Options:**
+- All three logging options are independent and can be enabled together
+- `log_messages` provides human-readable summaries (e.g., "Model: llama2, Prompt: Why is the sky blue?")
+- `log_raw_requests` shows the exact JSON payloads received by the proxy
+- `log_raw_responses` shows the complete JSON responses (including all streaming chunks)
+- All logs go to stdout and can be redirected to files if needed
+- Note: These are stdout logs only; database logging is always enabled regardless of these settings
 
 #### Backend
 - `type`: Backend type - either `"openai"` or `"ollama"`
