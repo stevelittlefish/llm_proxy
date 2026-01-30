@@ -36,3 +36,4 @@ Thumbs.db
 # Docker
 .dockerignore
 data/
+docker-compose.override.yml
