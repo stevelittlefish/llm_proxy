@@ -4,21 +4,21 @@
     "port": 11434,
     "enable_cors": true,
     "log_messages": false,
-    "log_raw_requests": true,
-    "log_raw_responses": true
+    "log_raw_requests": false,
+    "log_raw_responses": false
   },
   "backend": {
     "type": "openai",
-    "endpoint": "http://ai.lemon.com:8008",
+    "endpoint": "http://host.docker.internal:8008",
     "timeout": 300
   },
   "database": {
-    "path": "./data/llm_proxy.db"
+    "path": "/app/data/llm_proxy.db"
   },
   "models": {
-    "default": "qwen3-32b",
+    "default": "llama2",
     "mappings": {
-      "qwen-32b": "qwen3-32b-q4_k_m",
+      "llama2": "llama-2-7b-chat",
       "codellama": "codellama-7b"
     }
   }
