@@ -56,11 +56,16 @@ func main() {
 	chatHandler := handlers.NewChatHandler(backendInstance, db, cfg)
 	modelsHandler := handlers.NewModelsHandler(backendInstance)
 	showHandler := handlers.NewShowHandler(backendInstance)
+	webHandler := handlers.NewWebHandler(db)
 
 	mux.Handle("/api/generate", generateHandler)
 	mux.Handle("/api/chat", chatHandler)
 	mux.Handle("/api/tags", modelsHandler)
 	mux.Handle("/api/show", showHandler)
+
+	// Web UI endpoints
+	mux.HandleFunc("/logs", webHandler.IndexHandler)
+	mux.HandleFunc("/logs/details", webHandler.DetailsHandler)
 
 	// Root endpoint - mimics Ollama's behavior
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
