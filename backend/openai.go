@@ -399,6 +399,8 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 
 // handleNonStreamingChat processes non-streaming OpenAI chat responses
 func (o *OpenAIBackend) handleNonStreamingChat(body io.Reader, respChan chan<- models.ChatResponse, model string) {
+	startTime := time.Now()
+
 	var openaiResp models.OpenAIChatResponse
 	if err := json.NewDecoder(body).Decode(&openaiResp); err != nil {
 		return
@@ -421,14 +423,21 @@ func (o *OpenAIBackend) handleNonStreamingChat(body io.Reader, respChan chan<- m
 			evalTokens = openaiResp.Usage.CompletionTokens
 		}
 
+		// Calculate durations
+		totalDuration := time.Since(startTime).Nanoseconds()
+
 		respChan <- models.ChatResponse{
-			Model:           model,
-			CreatedAt:       time.Now(),
-			Message:         *choice.Message,
-			Done:            true,
-			DoneReason:      doneReason,
-			PromptEvalCount: promptTokens,
-			EvalCount:       evalTokens,
+			Model:              model,
+			CreatedAt:          time.Now(),
+			Message:            *choice.Message,
+			Done:               true,
+			DoneReason:         doneReason,
+			TotalDuration:      totalDuration + 1,
+			LoadDuration:       1,
+			PromptEvalCount:    promptTokens,
+			PromptEvalDuration: 1,
+			EvalCount:          evalTokens,
+			EvalDuration:       totalDuration,
 		}
 	}
 }
