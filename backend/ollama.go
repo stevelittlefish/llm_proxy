@@ -133,6 +133,18 @@ func (o *OllamaBackend) Chat(ctx context.Context, req models.ChatRequest) (<-cha
 				continue
 			}
 
+			// Always ensure role is set to "assistant" if empty
+			// This fixes Ollama's behavior of not including role in streaming chunks
+			if chatResp.Message.Role == "" {
+				chatResp.Message.Role = "assistant"
+			}
+
+			// Add load_duration to final response if missing
+			// Ollama doesn't include this in streaming mode, so we add a placeholder
+			if chatResp.Done && chatResp.LoadDuration == 0 {
+				chatResp.LoadDuration = 1
+			}
+
 			select {
 			case respChan <- chatResp:
 			case <-ctx.Done():

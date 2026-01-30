@@ -314,6 +314,7 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 				Done:               true,
 				DoneReason:         "stop",
 				TotalDuration:      totalDuration + 1,
+				LoadDuration:       1,
 				PromptEvalCount:    1,
 				PromptEvalDuration: 1,
 				EvalCount:          tokenCount,
@@ -340,6 +341,7 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 					Done:               true,
 					DoneReason:         choice.FinishReason,
 					TotalDuration:      totalDuration + 1,
+					LoadDuration:       1,
 					PromptEvalCount:    1,
 					PromptEvalDuration: 1,
 					EvalCount:          tokenCount,
@@ -353,11 +355,17 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 					tokenCount++
 				}
 
+				// Set role to "assistant" if empty (OpenAI often doesn't send role in streaming chunks)
+				role := choice.Delta.Role
+				if role == "" {
+					role = "assistant"
+				}
+
 				ollamaResp := models.ChatResponse{
 					Model:     model,
 					CreatedAt: time.Now(),
 					Message: models.Message{
-						Role:    choice.Delta.Role,
+						Role:    role,
 						Content: choice.Delta.Content,
 					},
 					Done: false,
@@ -381,6 +389,7 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 		Done:               true,
 		DoneReason:         "stop",
 		TotalDuration:      totalDuration + 1,
+		LoadDuration:       1,
 		PromptEvalCount:    1,
 		PromptEvalDuration: 1,
 		EvalCount:          tokenCount,
