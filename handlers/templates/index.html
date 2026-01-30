@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Proxy - Request Log</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            background: white;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+        .stats {
+            color: #7f8c8d;
+            font-size: 14px;
+        }
+        .table-container {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        thead {
+            background: #34495e;
+            color: white;
+        }
+        th {
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #ecf0f1;
+            font-size: 13px;
+        }
+        tr:hover {
+            background: #f8f9fa;
+        }
+        .timestamp {
+            font-family: "Courier New", monospace;
+            color: #7f8c8d;
+            white-space: nowrap;
+        }
+        .endpoint {
+            font-weight: 500;
+            color: #2980b9;
+        }
+        .model {
+            color: #27ae60;
+        }
+        .status-ok {
+            color: #27ae60;
+            font-weight: 600;
+        }
+        .status-error {
+            color: #e74c3c;
+            font-weight: 600;
+        }
+        .latency {
+            color: #8e44ad;
+            font-family: "Courier New", monospace;
+        }
+        .stream-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            background: #3498db;
+            color: white;
+        }
+        .error-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            background: #e74c3c;
+            color: white;
+        }
+        .truncated {
+            color: #95a5a6;
+            font-family: "Courier New", monospace;
+            font-size: 12px;
+        }
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-top: 20px;
+            padding: 20px;
+        }
+        .pagination a, .pagination span {
+            padding: 8px 16px;
+            background: white;
+            border-radius: 4px;
+            text-decoration: none;
+            color: #2c3e50;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .pagination a:hover {
+            background: #3498db;
+            color: white;
+        }
+        .pagination .current {
+            background: #34495e;
+            color: white;
+            font-weight: 600;
+        }
+        .pagination .disabled {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+        a {
+            color: #3498db;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔄 LLM Proxy Request Log</h1>
+            <div class="stats">Total Requests: {{.TotalCount}} | Page {{.CurrentPage}} of {{.TotalPages}}</div>
+        </header>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Timestamp</th>
+                        <th>Endpoint</th>
+                        <th>Model</th>
+                        <th>Status</th>
+                        <th>Latency</th>
+                        <th>Flags</th>
+                        <th>Preview</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .Entries}}
+                    <tr>
+                        <td><a href="/logs/details?id={{.ID}}">#{{.ID}}</a></td>
+                        <td class="timestamp">{{.Timestamp.Format "2006-01-02 15:04:05"}}</td>
+                        <td class="endpoint">{{.Endpoint}}</td>
+                        <td class="model">{{.Model}}</td>
+                        <td class="{{if eq .StatusCode 200}}status-ok{{else}}status-error{{end}}">{{.StatusCode}}</td>
+                        <td class="latency">{{.LatencyMs}}ms</td>
+                        <td>
+                            {{if .Stream}}<span class="stream-badge">STREAM</span>{{end}}
+                            {{if .Error}}<span class="error-badge">ERROR</span>{{end}}
+                        </td>
+                        <td class="truncated">{{truncate .Prompt 80}}</td>
+                    </tr>
+                    {{else}}
+                    <tr>
+                        <td colspan="8" style="text-align: center; padding: 40px; color: #95a5a6;">
+                            No requests logged yet
+                        </td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+
+        {{if gt .TotalPages 1}}
+        <div class="pagination">
+            {{if .HasPrev}}
+                <a href="?page={{.PrevPage}}">← Previous</a>
+            {{else}}
+                <span class="disabled">← Previous</span>
+            {{end}}
+            
+            <span class="current">Page {{.CurrentPage}} of {{.TotalPages}}</span>
+            
+            {{if .HasNext}}
+                <a href="?page={{.NextPage}}">Next →</a>
+            {{else}}
+                <span class="disabled">Next →</span>
+            {{end}}
+        </div>
+        {{end}}
+    </div>
+</body>
+</html>
