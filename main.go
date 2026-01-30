@@ -62,6 +62,16 @@ func main() {
 	mux.Handle("/api/tags", modelsHandler)
 	mux.Handle("/api/show", showHandler)
 
+	// Root endpoint - mimics Ollama's behavior
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, "Ollama (proxy) is running")
+	})
+
 	// Health check endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
