@@ -18,6 +18,14 @@ if [ $# -ne 2 ]; then
     echo ""
     echo "Usage: $0 <version> <message>"
     echo ""
+    
+    # Show latest tag if available
+    LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || git tag -l "v*" | sort -V | tail -1)
+    if [ -n "$LATEST_TAG" ]; then
+        echo "Latest tag: $LATEST_TAG"
+        echo ""
+    fi
+    
     echo "Example:"
     echo "  $0 v1.0.0 \"Initial release\""
     echo "  $0 v1.2.3 \"Bug fixes and improvements\""
@@ -35,6 +43,14 @@ if [[ ! $VERSION =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-.*)?$ ]]; then
     echo "Version must follow the pattern: v<major>.<minor>.<patch>"
     echo "Examples: v1.0.0, v2.3.1, v1.0.0-beta, v2.0.0-rc1"
     echo ""
+    
+    # Show latest tag if available
+    LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || git tag -l "v*" | sort -V | tail -1)
+    if [ -n "$LATEST_TAG" ]; then
+        echo "Latest tag: $LATEST_TAG"
+        echo ""
+    fi
+    
     exit 1
 fi
 
