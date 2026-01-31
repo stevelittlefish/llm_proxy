@@ -6,15 +6,16 @@ import "time"
 
 // GenerateRequest represents an Ollama generate request
 type GenerateRequest struct {
-	Model    string                 `json:"model"`
-	Prompt   string                 `json:"prompt"`
-	Stream   bool                   `json:"stream,omitempty"`
-	Options  map[string]interface{} `json:"options,omitempty"`
-	Context  []int                  `json:"context,omitempty"`
-	Format   string                 `json:"format,omitempty"`
-	System   string                 `json:"system,omitempty"`
-	Template string                 `json:"template,omitempty"`
-	Raw      bool                   `json:"raw,omitempty"`
+	Model     string                 `json:"model"`
+	Prompt    string                 `json:"prompt"`
+	Stream    bool                   `json:"stream,omitempty"`
+	Options   map[string]interface{} `json:"options,omitempty"`
+	Context   []int                  `json:"context,omitempty"`
+	Format    string                 `json:"format,omitempty"`
+	System    string                 `json:"system,omitempty"`
+	Template  string                 `json:"template,omitempty"`
+	Raw       bool                   `json:"raw,omitempty"`
+	KeepAlive string                 `json:"keep_alive,omitempty"`
 }
 
 // GenerateResponse represents an Ollama generate response
@@ -35,13 +36,14 @@ type GenerateResponse struct {
 
 // ChatRequest represents an Ollama chat request
 type ChatRequest struct {
-	Model    string                 `json:"model"`
-	Messages []Message              `json:"messages"`
-	Stream   bool                   `json:"stream,omitempty"`
-	Options  map[string]interface{} `json:"options,omitempty"`
-	Format   string                 `json:"format,omitempty"`
-	Template string                 `json:"template,omitempty"`
-	Tools    []interface{}          `json:"tools,omitempty"`
+	Model     string                 `json:"model"`
+	Messages  []Message              `json:"messages"`
+	Stream    bool                   `json:"stream,omitempty"`
+	Options   map[string]interface{} `json:"options,omitempty"`
+	Format    string                 `json:"format,omitempty"`
+	Template  string                 `json:"template,omitempty"`
+	Tools     []interface{}          `json:"tools,omitempty"`
+	KeepAlive string                 `json:"keep_alive,omitempty"`
 }
 
 // Message represents a chat message
