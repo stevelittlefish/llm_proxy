@@ -326,6 +326,14 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 	tokenCount := 0
 	var rawResponse strings.Builder
 
+	// Tool call accumulation state
+	// Map of tool call index -> accumulated data
+	toolCallsState := make(map[int]struct {
+		ID        string
+		Name      string
+		Arguments string
+	})
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		rawResponse.WriteString(line)
@@ -337,6 +345,21 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 
 		data := strings.TrimPrefix(line, "data: ")
 		if data == "[DONE]" {
+			// Send accumulated tool calls if any exist
+			if len(toolCallsState) > 0 {
+				toolCalls := buildToolCallsArray(toolCallsState)
+				respChan <- models.ChatResponse{
+					Model:     model,
+					CreatedAt: time.Now(),
+					Message: models.Message{
+						Role:      "assistant",
+						Content:   "",
+						ToolCalls: toolCalls,
+					},
+					Done: false,
+				}
+			}
+
 			// Store raw response before sending final message
 			metadata.RawResponse = rawResponse.String()
 			// Send final response with done=true and performance metrics
@@ -367,6 +390,21 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 
 			// Check if this is the final chunk with finish_reason
 			if choice.FinishReason != "" && choice.FinishReason != "null" {
+				// Send accumulated tool calls if any exist
+				if len(toolCallsState) > 0 {
+					toolCalls := buildToolCallsArray(toolCallsState)
+					respChan <- models.ChatResponse{
+						Model:     model,
+						CreatedAt: time.Now(),
+						Message: models.Message{
+							Role:      "assistant",
+							Content:   "",
+							ToolCalls: toolCalls,
+						},
+						Done: false,
+					}
+				}
+
 				// Store raw response before sending final message
 				metadata.RawResponse = rawResponse.String()
 				totalDuration := time.Since(startTime).Nanoseconds()
@@ -387,34 +425,95 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 			}
 
 			if choice.Delta != nil {
+				// Handle tool calls by accumulating them
+				if choice.Delta.ToolCalls != nil && len(choice.Delta.ToolCalls) > 0 {
+					for _, tc := range choice.Delta.ToolCalls {
+						tcMap, ok := tc.(map[string]interface{})
+						if !ok {
+							continue
+						}
+
+						// Get the index to track which tool call this chunk belongs to
+						index := 0
+						if idx, ok := tcMap["index"].(float64); ok {
+							index = int(idx)
+						}
+
+						// Initialize state for this tool call if needed
+						if _, exists := toolCallsState[index]; !exists {
+							toolCallsState[index] = struct {
+								ID        string
+								Name      string
+								Arguments string
+							}{}
+						}
+
+						state := toolCallsState[index]
+
+						// Accumulate ID
+						if id, ok := tcMap["id"].(string); ok && id != "" {
+							state.ID = id
+						}
+
+						// Accumulate function name and arguments
+						if fn, ok := tcMap["function"].(map[string]interface{}); ok {
+							if name, ok := fn["name"].(string); ok && name != "" {
+								state.Name = name
+							}
+							if args, ok := fn["arguments"].(string); ok {
+								state.Arguments += args
+							}
+						}
+
+						toolCallsState[index] = state
+					}
+					// Don't send tool call chunks immediately, continue accumulating
+					continue
+				}
+
+				// Handle regular content
 				if choice.Delta.Content != "" {
 					tokenCount++
-				}
 
-				// Set role to "assistant" if empty (OpenAI often doesn't send role in streaming chunks)
-				role := choice.Delta.Role
-				if role == "" {
-					role = "assistant"
-				}
+					// Set role to "assistant" if empty
+					role := choice.Delta.Role
+					if role == "" {
+						role = "assistant"
+					}
 
-				ollamaResp := models.ChatResponse{
-					Model:     model,
-					CreatedAt: time.Now(),
-					Message: models.Message{
-						Role:      role,
-						Content:   choice.Delta.Content,
-						Thinking:  choice.Delta.Thinking,
-						ToolCalls: choice.Delta.ToolCalls,
-					},
-					Done: false,
-				}
+					ollamaResp := models.ChatResponse{
+						Model:     model,
+						CreatedAt: time.Now(),
+						Message: models.Message{
+							Role:     role,
+							Content:  choice.Delta.Content,
+							Thinking: choice.Delta.Thinking,
+						},
+						Done: false,
+					}
 
-				select {
-				case respChan <- ollamaResp:
-				case <-ctx.Done():
-					return
+					select {
+					case respChan <- ollamaResp:
+					case <-ctx.Done():
+						return
+					}
 				}
 			}
+		}
+	}
+
+	// Send accumulated tool calls if any exist
+	if len(toolCallsState) > 0 {
+		toolCalls := buildToolCallsArray(toolCallsState)
+		respChan <- models.ChatResponse{
+			Model:     model,
+			CreatedAt: time.Now(),
+			Message: models.Message{
+				Role:      "assistant",
+				Content:   "",
+				ToolCalls: toolCalls,
+			},
+			Done: false,
 		}
 	}
 
@@ -434,6 +533,53 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 		EvalCount:          tokenCount,
 		EvalDuration:       totalDuration,
 	}
+}
+
+// buildToolCallsArray converts accumulated tool call state into Ollama format
+func buildToolCallsArray(toolCallsState map[int]struct {
+	ID        string
+	Name      string
+	Arguments string
+}) []interface{} {
+	var toolCalls []interface{}
+
+	// Process tool calls in order by index
+	maxIndex := -1
+	for idx := range toolCallsState {
+		if idx > maxIndex {
+			maxIndex = idx
+		}
+	}
+
+	for i := 0; i <= maxIndex; i++ {
+		state, exists := toolCallsState[i]
+		if !exists {
+			continue
+		}
+
+		// Parse arguments JSON string into an object
+		var argsObj interface{}
+		if state.Arguments != "" {
+			if err := json.Unmarshal([]byte(state.Arguments), &argsObj); err != nil {
+				// If parsing fails, use the string as-is
+				argsObj = state.Arguments
+			}
+		} else {
+			argsObj = map[string]interface{}{}
+		}
+
+		// Build Ollama-format tool call (simpler structure than OpenAI)
+		toolCall := map[string]interface{}{
+			"function": map[string]interface{}{
+				"name":      state.Name,
+				"arguments": argsObj,
+			},
+		}
+
+		toolCalls = append(toolCalls, toolCall)
+	}
+
+	return toolCalls
 }
 
 // handleNonStreamingChat processes non-streaming OpenAI chat responses
