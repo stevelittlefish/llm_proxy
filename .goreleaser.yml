@@ -79,6 +79,24 @@ changelog:
     - title: 'Other Changes'
       order: 999
 
+dockers:
+  - image_templates:
+      - "ghcr.io/stevelittlefish/llm_proxy:{{ .Tag }}"
+      - "ghcr.io/stevelittlefish/llm_proxy:v{{ .Major }}"
+      - "ghcr.io/stevelittlefish/llm_proxy:v{{ .Major }}.{{ .Minor }}"
+      - "ghcr.io/stevelittlefish/llm_proxy:latest"
+    dockerfile: Dockerfile
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.source=https://github.com/stevelittlefish/llm_proxy"
+      - "--label=org.opencontainers.image.description=LLM Proxy - Ollama-compatible API with multiple backend support"
+      - "--label=org.opencontainers.image.licenses=MIT"
+
 release:
   github:
     owner: stevelittlefish
@@ -89,12 +107,22 @@ release:
   header: |
     ## LLM Proxy {{ .Tag }}
     
+    ### Docker Images (Recommended)
+    
+    Pre-built Docker images are available on GitHub Container Registry:
+    
+    ```bash
+    docker pull ghcr.io/stevelittlefish/llm_proxy:{{ .Tag }}
+    ```
+    
+    See the [Quick Start with Docker](#quick-start-with-docker) section in the README for usage instructions.
+    
     ### Pre-built Binary (Linux x86_64)
     
     Download the Linux x86_64 archive below.
     
     **Note:** Due to CGO requirements for SQLite, pre-built binaries are only available for Linux x86_64. 
-    Users on macOS, Windows, or ARM64 should build from source. See the README for build instructions.
+    Users on macOS, Windows, or ARM64 should use Docker or build from source. See the README for build instructions.
     
     ### Installation
     

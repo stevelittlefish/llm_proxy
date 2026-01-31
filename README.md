@@ -16,6 +16,66 @@ The main motivation for creating this was to get the Home Assistant Ollama integ
 - **Docker Support**: Production-ready Docker images with health checks
 - **Minimal Dependencies**: Only requires Go standard library + SQLite driver
 
+## Quick Start with Docker
+
+The easiest way to run LLM Proxy is using the pre-built Docker images:
+
+### Using Docker Run
+
+```bash
+# 1. Create a config file
+curl -O https://raw.githubusercontent.com/stevelittlefish/llm_proxy/master/config.json.example
+mv config.json.example config.json
+# Edit config.json to configure your backend
+
+# 2. Create data directory
+mkdir -p data
+
+# 3. Run the container
+docker run -d \
+  --name llm-proxy \
+  -p 11434:11434 \
+  -v $(pwd)/config.json:/app/config/config.json:ro \
+  -v $(pwd)/data:/app/data \
+  ghcr.io/stevelittlefish/llm_proxy:latest
+```
+
+### Using Docker Compose
+
+Create a `docker-compose.yml` file:
+
+```yaml
+version: '3.8'
+
+services:
+  llm-proxy:
+    image: ghcr.io/stevelittlefish/llm_proxy:latest
+    container_name: llm-proxy
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ./config.json:/app/config/config.json:ro
+      - ./data:/app/data
+```
+
+Then run:
+
+```bash
+# Get the example config
+curl -O https://raw.githubusercontent.com/stevelittlefish/llm_proxy/master/config.json.example
+mv config.json.example config.json
+# Edit config.json to configure your backend
+
+# Create data directory
+mkdir -p data
+
+# Start the service
+docker-compose up -d
+```
+
+For advanced Docker setup (building from source, custom networks, etc.), see [DOCKER.md](DOCKER.md).
+
 ## Use Case
 
 This proxy is designed to sit between Home Assistant (or any Ollama client) and llama.cpp (or other backends), allowing you to:

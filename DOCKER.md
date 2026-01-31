@@ -5,9 +5,81 @@ This guide explains how to run the LLM proxy server using Docker.
 ## Prerequisites
 
 - Docker Engine 20.10+
-- Docker Compose 1.29+
+- Docker Compose 1.29+ (optional, for orchestration)
 
-## Quick Start
+## Using Pre-built Images (Recommended)
+
+Pre-built Docker images are available from GitHub Container Registry. This is the easiest way to get started:
+
+### Quick Start with Pre-built Image
+
+```bash
+# 1. Get the example config
+curl -O https://raw.githubusercontent.com/stevelittlefish/llm_proxy/master/config.json.example
+mv config.json.example config.json
+# Edit config.json to configure your backend
+
+# 2. Create data directory
+mkdir -p data
+
+# 3. Run the container
+docker run -d \
+  --name llm-proxy \
+  -p 11434:11434 \
+  -v $(pwd)/config.json:/app/config/config.json:ro \
+  -v $(pwd)/data:/app/data \
+  ghcr.io/stevelittlefish/llm_proxy:latest
+```
+
+### Using Docker Compose with Pre-built Image
+
+Create a simple `docker-compose.yml`:
+
+```yaml
+version: '3.8'
+
+services:
+  llm-proxy:
+    image: ghcr.io/stevelittlefish/llm_proxy:latest
+    container_name: llm-proxy
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ./config.json:/app/config/config.json:ro
+      - ./data:/app/data
+```
+
+Then run:
+
+```bash
+docker-compose up -d
+```
+
+### Available Image Tags
+
+- `latest` - Latest stable release
+- `v1.0.0` - Specific version (replace with desired version)
+- `v1.0` - Latest patch version of 1.0.x
+- `v1` - Latest minor version of 1.x.x
+
+Examples:
+```bash
+# Use latest version
+docker pull ghcr.io/stevelittlefish/llm_proxy:latest
+
+# Use specific version
+docker pull ghcr.io/stevelittlefish/llm_proxy:v1.0.0
+
+# Use latest 1.x version
+docker pull ghcr.io/stevelittlefish/llm_proxy:v1
+```
+
+## Building from Source
+
+If you prefer to build the Docker image from source (for development or customization):
+
+### Quick Start
 
 ### 1. Prepare Configuration
 
