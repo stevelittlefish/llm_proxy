@@ -246,15 +246,100 @@ func (o *OpenAIBackend) handleNonStreamingCompletion(body io.Reader, respChan ch
 	}
 }
 
+// convertMessagesToOpenAI converts Ollama-format messages to OpenAI-format
+// by adding the "type" field to tool_calls and converting arguments to JSON string
+func convertMessagesToOpenAI(messages []models.Message) []models.Message {
+	converted := make([]models.Message, len(messages))
+
+	for i, msg := range messages {
+		converted[i] = msg
+
+		// If this message has tool_calls, convert them to OpenAI format
+		if len(msg.ToolCalls) > 0 {
+			convertedToolCalls := make([]interface{}, len(msg.ToolCalls))
+
+			for j, tc := range msg.ToolCalls {
+				tcMap, ok := tc.(map[string]interface{})
+				if !ok {
+					convertedToolCalls[j] = tc
+					continue
+				}
+
+				// Build OpenAI-format tool call
+				newToolCall := make(map[string]interface{})
+				newToolCall["type"] = "function"
+
+				// Handle the function field
+				if fnField, ok := tcMap["function"].(map[string]interface{}); ok {
+					newFunction := make(map[string]interface{})
+
+					// Copy name
+					if name, ok := fnField["name"].(string); ok {
+						newFunction["name"] = name
+					}
+
+					// Convert arguments to JSON string if it's an object
+					if args, ok := fnField["arguments"]; ok {
+						switch argsTyped := args.(type) {
+						case string:
+							// Already a string, use as-is
+							newFunction["arguments"] = argsTyped
+						case map[string]interface{}, []interface{}:
+							// It's an object/array, convert to JSON string
+							argsJSON, err := json.Marshal(argsTyped)
+							if err == nil {
+								newFunction["arguments"] = string(argsJSON)
+							} else {
+								newFunction["arguments"] = "{}"
+							}
+						default:
+							// Try to marshal whatever it is
+							argsJSON, err := json.Marshal(argsTyped)
+							if err == nil {
+								newFunction["arguments"] = string(argsJSON)
+							} else {
+								newFunction["arguments"] = "{}"
+							}
+						}
+					} else {
+						newFunction["arguments"] = "{}"
+					}
+
+					newToolCall["function"] = newFunction
+				} else {
+					// Copy function field as-is if not a map
+					newToolCall["function"] = tcMap["function"]
+				}
+
+				// Copy any other fields (like id)
+				for k, v := range tcMap {
+					if k != "function" && k != "type" {
+						newToolCall[k] = v
+					}
+				}
+
+				convertedToolCalls[j] = newToolCall
+			}
+
+			converted[i].ToolCalls = convertedToolCalls
+		}
+	}
+
+	return converted
+}
+
 // Chat handles chat completion requests by translating to OpenAI format
 func (o *OpenAIBackend) Chat(ctx context.Context, req models.ChatRequest) (<-chan models.ChatResponse, *BackendMetadata, error) {
 	respChan := make(chan models.ChatResponse, 10)
 	metadata := &BackendMetadata{}
 
+	// Convert messages from Ollama format to OpenAI format (add type field to tool_calls)
+	convertedMessages := convertMessagesToOpenAI(req.Messages)
+
 	// Translate Ollama request to OpenAI chat request
 	openaiReq := models.OpenAIChatRequest{
 		Model:    req.Model,
-		Messages: req.Messages,
+		Messages: convertedMessages,
 		Stream:   req.Stream,
 		Tools:    req.Tools,
 	}
