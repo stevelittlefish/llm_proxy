@@ -334,8 +334,24 @@
         </div>
         {{end}}
 
-        <div style="text-align: center; padding: 20px;">
-            <a href="/logs" class="back-link">← Back to list</a>
+        <div class="section">
+            <div class="header-nav">
+                <div>
+                    <a href="/logs" class="back-link">← Back to list</a>
+                </div>
+                <div class="nav-buttons">
+                    {{if .PrevID}}
+                        <a href="/logs/details?id={{.PrevID}}" class="nav-btn">← Previous</a>
+                    {{else}}
+                        <span class="nav-btn disabled">← Previous</span>
+                    {{end}}
+                    {{if .NextID}}
+                        <a href="/logs/details?id={{.NextID}}" class="nav-btn">Next →</a>
+                    {{else}}
+                        <span class="nav-btn disabled">Next →</span>
+                    {{end}}
+                </div>
+            </div>
         </div>
     </div>
 </body>
