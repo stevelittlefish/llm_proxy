@@ -403,6 +403,7 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 					Message: models.Message{
 						Role:      role,
 						Content:   choice.Delta.Content,
+						Thinking:  choice.Delta.Thinking,
 						ToolCalls: choice.Delta.ToolCalls,
 					},
 					Done: false,

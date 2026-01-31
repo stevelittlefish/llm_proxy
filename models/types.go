@@ -48,6 +48,7 @@ type ChatRequest struct {
 type Message struct {
 	Role      string        `json:"role"`
 	Content   string        `json:"content"`
+	Thinking  string        `json:"thinking,omitempty"`
 	ToolCalls []interface{} `json:"tool_calls,omitempty"`
 }
 
