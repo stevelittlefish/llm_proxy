@@ -31,10 +31,11 @@ This proxy is designed to sit between Home Assistant (or any Ollama client) and 
 The easiest way to get started is to download a pre-built binary from the [releases page](https://github.com/stevelittlefish/llm_proxy/releases).
 
 1. Download the archive for your platform:
-   - Linux: `llm_proxy_VERSION_linux_amd64.tar.gz`
+   - Linux (x86_64): `llm_proxy_VERSION_linux_amd64.tar.gz`
    - macOS (Intel): `llm_proxy_VERSION_darwin_amd64.tar.gz`
-   - macOS (Apple Silicon): `llm_proxy_VERSION_darwin_arm64.tar.gz`
-   - Windows: `llm_proxy_VERSION_windows_amd64.zip`
+   - Windows (x86_64): `llm_proxy_VERSION_windows_amd64.zip`
+
+**Note:** Pre-built binaries are currently only available for x86_64/amd64 architectures. ARM64 users (including Apple Silicon Macs, Raspberry Pi 4/5, and ARM-based Linux systems) should [build from source](#build-from-source) as the SQLite dependency requires CGO which cannot be easily cross-compiled.
 
 2. Extract the archive:
    ```bash

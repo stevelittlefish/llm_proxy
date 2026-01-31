@@ -21,11 +21,8 @@ builds:
       - windows
     goarch:
       - amd64
-      - arm64
-    # Exclude combinations that don't make sense or are hard to cross-compile
-    ignore:
-      - goos: windows
-        goarch: arm64
+    # Note: ARM64 cross-compilation with CGO (required for SQLite) is not supported
+    # on standard GitHub Actions runners. Users on ARM64 should build from source.
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
@@ -36,11 +33,8 @@ builds:
 
 archives:
   - id: default
-    format: tar.gz
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    format_overrides:
-      - goos: windows
-        format: zip
+    rlcp: true
     files:
       # Include documentation
       - README.md
@@ -60,7 +54,7 @@ checksum:
   algorithm: sha256
 
 snapshot:
-  name_template: "{{ incpatch .Version }}-next"
+  version_template: "{{ incpatch .Version }}-next"
 
 changelog:
   sort: asc
