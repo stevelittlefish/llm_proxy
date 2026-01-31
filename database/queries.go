@@ -8,7 +8,7 @@ import (
 // GetRecentEntries returns the most recent log entries with pagination
 func (db *DB) GetRecentEntries(limit, offset int) ([]LogEntry, error) {
 	query := `
-		SELECT id, timestamp, endpoint, method, model, prompt, response, status_code, latency_ms, stream, backend_type, error, frontend_url, backend_url, frontend_request, frontend_response, backend_request, backend_response
+		SELECT id, timestamp, endpoint, method, model, prompt, response, status_code, latency_ms, stream, backend_type, error, frontend_url, backend_url, frontend_request, frontend_response, backend_request, backend_response, last_message
 		FROM request
 		ORDER BY timestamp DESC
 		LIMIT ? OFFSET ?
@@ -42,6 +42,7 @@ func (db *DB) GetRecentEntries(limit, offset int) ([]LogEntry, error) {
 			&entry.FrontendResponse,
 			&entry.BackendRequest,
 			&entry.BackendResponse,
+			&entry.LastMessage,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan entry: %w", err)
@@ -59,7 +60,7 @@ func (db *DB) GetRecentEntries(limit, offset int) ([]LogEntry, error) {
 // GetEntryByID returns a single log entry by ID
 func (db *DB) GetEntryByID(id int64) (*LogEntry, error) {
 	query := `
-		SELECT id, timestamp, endpoint, method, model, prompt, response, status_code, latency_ms, stream, backend_type, error, frontend_url, backend_url, frontend_request, frontend_response, backend_request, backend_response
+		SELECT id, timestamp, endpoint, method, model, prompt, response, status_code, latency_ms, stream, backend_type, error, frontend_url, backend_url, frontend_request, frontend_response, backend_request, backend_response, last_message
 		FROM request
 		WHERE id = ?
 	`
@@ -84,6 +85,7 @@ func (db *DB) GetEntryByID(id int64) (*LogEntry, error) {
 		&entry.FrontendResponse,
 		&entry.BackendRequest,
 		&entry.BackendResponse,
+		&entry.LastMessage,
 	)
 
 	if err == sql.ErrNoRows {

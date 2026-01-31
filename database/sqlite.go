@@ -33,6 +33,7 @@ type LogEntry struct {
 	FrontendResponse string // Raw frontend response JSON
 	BackendRequest   string // Raw backend request JSON
 	BackendResponse  string // Raw backend response data
+	LastMessage      string // Last message in the prompt (user input or tool result)
 }
 
 // New creates a new database connection and initializes the schema
@@ -72,7 +73,8 @@ func (db *DB) initSchema() error {
 		frontend_request TEXT,
 		frontend_response TEXT,
 		backend_request TEXT,
-		backend_response TEXT
+		backend_response TEXT,
+		last_message TEXT NOT NULL DEFAULT 'unknown'
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_timestamp ON request(timestamp);
@@ -87,8 +89,8 @@ func (db *DB) initSchema() error {
 // Log inserts a log entry into the database
 func (db *DB) Log(entry LogEntry) error {
 	query := `
-		INSERT INTO request (timestamp, endpoint, method, model, prompt, response, status_code, latency_ms, stream, backend_type, error, frontend_url, backend_url, frontend_request, frontend_response, backend_request, backend_response)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO request (timestamp, endpoint, method, model, prompt, response, status_code, latency_ms, stream, backend_type, error, frontend_url, backend_url, frontend_request, frontend_response, backend_request, backend_response, last_message)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	_, err := db.conn.Exec(
@@ -110,6 +112,7 @@ func (db *DB) Log(entry LogEntry) error {
 		entry.FrontendResponse,
 		entry.BackendRequest,
 		entry.BackendResponse,
+		entry.LastMessage,
 	)
 
 	if err != nil {

@@ -169,6 +169,12 @@ func (h *ChatHandler) logRequest(startTime time.Time, req models.ChatRequest, re
 		prompt.WriteString("\n")
 	}
 
+	// Extract last message
+	lastMessage := "unknown"
+	if len(req.Messages) > 0 {
+		lastMessage = req.Messages[len(req.Messages)-1].Content
+	}
+
 	entry := database.LogEntry{
 		Timestamp:        startTime,
 		Endpoint:         "/api/chat",
@@ -187,6 +193,7 @@ func (h *ChatHandler) logRequest(startTime time.Time, req models.ChatRequest, re
 		FrontendResponse: frontendResp,
 		BackendRequest:   backendReq,
 		BackendResponse:  backendResp,
+		LastMessage:      lastMessage,
 	}
 
 	if err := h.db.Log(entry); err != nil {

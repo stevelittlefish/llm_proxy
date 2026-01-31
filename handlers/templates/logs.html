@@ -183,7 +183,7 @@
                             {{if .Stream}}<span class="stream-badge">STREAM</span>{{end}}
                             {{if .Error}}<span class="error-badge">ERROR</span>{{end}}
                         </td>
-                        <td class="truncated">{{truncate .Prompt 80}}</td>
+                        <td class="truncated">{{truncate .LastMessage 80}}</td>
                     </tr>
                     {{else}}
                     <tr>

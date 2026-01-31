@@ -157,6 +157,12 @@ func (h *GenerateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (h *GenerateHandler) logRequest(startTime time.Time, req models.GenerateRequest, response string, statusCode int, errMsg string, frontendReq string, frontendResp string, backendReq string, backendResp string, backendURL string) {
 	latency := time.Since(startTime).Milliseconds()
 
+	// For generate endpoint, the prompt is the last message
+	lastMessage := req.Prompt
+	if lastMessage == "" {
+		lastMessage = "unknown"
+	}
+
 	entry := database.LogEntry{
 		Timestamp:        startTime,
 		Endpoint:         "/api/generate",
@@ -175,6 +181,7 @@ func (h *GenerateHandler) logRequest(startTime time.Time, req models.GenerateReq
 		FrontendResponse: frontendResp,
 		BackendRequest:   backendReq,
 		BackendResponse:  backendResp,
+		LastMessage:      lastMessage,
 	}
 
 	if err := h.db.Log(entry); err != nil {
