@@ -26,31 +26,69 @@ This proxy is designed to sit between Home Assistant (or any Ollama client) and 
 
 ## Installation
 
-### Prerequisites
+### Download Pre-built Binaries
+
+The easiest way to get started is to download a pre-built binary from the [releases page](https://github.com/stevelittlefish/llm_proxy/releases).
+
+1. Download the archive for your platform:
+   - Linux: `llm_proxy_VERSION_linux_amd64.tar.gz`
+   - macOS (Intel): `llm_proxy_VERSION_darwin_amd64.tar.gz`
+   - macOS (Apple Silicon): `llm_proxy_VERSION_darwin_arm64.tar.gz`
+   - Windows: `llm_proxy_VERSION_windows_amd64.zip`
+
+2. Extract the archive:
+   ```bash
+   # Linux/macOS
+   tar -xzf llm_proxy_VERSION_linux_amd64.tar.gz
+   cd llm_proxy_VERSION_linux_amd64
+   
+   # Windows: use your preferred extraction tool
+   ```
+
+3. Edit `config.json` to configure your backend
+
+4. Run the proxy:
+   ```bash
+   # Linux/macOS
+   ./llm_proxy
+   
+   # Windows
+   llm_proxy.exe
+   ```
+
+### Build from Source
+
+If you prefer to build from source:
+
+#### Prerequisites
 
 - Go 1.21 or later
 - GCC (required for SQLite driver compilation)
 
-### Quickstart
+#### Quickstart
 
 Clone the repository and then do:
 
 ```bash
+git clone https://github.com/stevelittlefish/llm_proxy
+cd llm_proxy
 cp config.json.example config.json
 # Edit the file to change settings
 go run .
 ```
 
-### Build from Source
+#### Build Binary
 
 ```bash
-git clone <REPOSITORY>
+git clone https://github.com/stevelittlefish/llm_proxy
 cd llm_proxy
 go mod download
 go build -o llm_proxy
 ```
 
-Or see [DOCKER.md](DOCKER.md) for Docker installation instructions.
+### Docker Installation
+
+See [DOCKER.md](DOCKER.md) for Docker and Docker Compose installation instructions.
 
 ## Configuration
 
@@ -287,6 +325,48 @@ The proxy adds minimal latency (typically <10ms) as it streams responses directl
 ## Docker Deployment
 
 See [DOCKER.md](DOCKER.md) for detailed Docker and Docker Compose instructions.
+
+## Releases
+
+This project uses automated builds via GitHub Actions and GoReleaser. When you push a tag starting with `v`, it automatically builds binaries for all supported platforms and creates a GitHub release.
+
+### Creating a Release
+
+Use the included `make_release.sh` script to create and push a release:
+
+```bash
+./make_release.sh v1.0.0 "Initial release"
+```
+
+The script will:
+1. Validate the version format (must start with `v`)
+2. Check for uncommitted changes and warn if found
+3. Verify you're on the `main` branch
+4. Check that the tag doesn't already exist
+5. Show a summary and ask for confirmation
+6. Create an annotated tag with your message
+7. Push the tag to GitHub
+
+GitHub Actions will then automatically:
+- Build binaries for Linux, macOS (Intel & ARM), and Windows
+- Create release archives with config files and documentation
+- Generate checksums
+- Create a GitHub release with all artifacts
+
+**Manual Release (alternative)**:
+```bash
+git tag -a v1.0.0 -m "Release v1.0.0"
+git push origin v1.0.0
+```
+
+### Release Artifacts
+
+Each release includes:
+- Pre-built binaries for multiple platforms
+- `config.json` (ready to edit)
+- Documentation (README.md, LICENCE.md, DOCKER.md)
+- Data directory with README
+- SHA256 checksums for verification
 
 ## Contributing
 

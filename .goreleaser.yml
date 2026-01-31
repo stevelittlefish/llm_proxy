@@ -1,0 +1,119 @@
+# GoReleaser configuration for LLM Proxy
+# Documentation: https://goreleaser.com
+
+version: 2
+
+before:
+  hooks:
+    # Ensure dependencies are up to date
+    - go mod tidy
+    - go mod download
+
+builds:
+  - id: llm_proxy
+    binary: llm_proxy
+    main: .
+    env:
+      - CGO_ENABLED=1
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    # Exclude combinations that don't make sense or are hard to cross-compile
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+    flags:
+      - -trimpath
+
+archives:
+  - id: default
+    format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      # Include documentation
+      - README.md
+      - LICENCE.md
+      - DOCKER.md
+      # Include config as config.json (ready to use)
+      - src: config.json.example
+        dst: config.json
+        strip_parent: true
+      # Include data directory with README
+      - src: data/README
+        dst: data/README
+        strip_parent: false
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: 'New Features'
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: 'Bug Fixes'
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: 'Performance Improvements'
+      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: 'Documentation'
+      regexp: '^.*?docs(\([[:word:]]+\))??!?:.+$'
+      order: 3
+    - title: 'Other Changes'
+      order: 999
+
+release:
+  github:
+    owner: stevelittlefish
+    name: llm_proxy
+  draft: false
+  prerelease: auto
+  mode: replace
+  header: |
+    ## LLM Proxy {{ .Tag }}
+    
+    Download the appropriate archive for your operating system below.
+    
+    ### Installation
+    
+    1. Download the archive for your platform
+    2. Extract the archive
+    3. Edit `config.json` to configure your backend
+    4. Run `./llm_proxy` (or `llm_proxy.exe` on Windows)
+    
+    See [README.md](https://github.com/stevelittlefish/llm_proxy/blob/main/README.md) for detailed documentation.
+  footer: |
+    **Full Changelog**: https://github.com/stevelittlefish/llm_proxy/compare/{{ .PreviousTag }}...{{ .Tag }}
+    
+    ---
+    
+    Built with [GoReleaser](https://goreleaser.com/)
+
+announce:
+  skip: true
