@@ -85,7 +85,7 @@ dockers:
       - "ghcr.io/stevelittlefish/llm_proxy:v{{ .Major }}"
       - "ghcr.io/stevelittlefish/llm_proxy:v{{ .Major }}.{{ .Minor }}"
       - "ghcr.io/stevelittlefish/llm_proxy:latest"
-    dockerfile: Dockerfile
+    dockerfile: Dockerfile.goreleaser
     use: buildx
     build_flag_templates:
       - "--platform=linux/amd64"
