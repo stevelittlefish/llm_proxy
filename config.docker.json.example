@@ -16,5 +16,10 @@
     "path": "/data/llm_proxy.db",
     "max_requests": 100,
     "cleanup_interval": 5
+  },
+  "chat_text_injection": {
+    "enabled": false,
+    "text": "/nothink",
+    "mode": "last"
   }
 }

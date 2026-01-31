@@ -62,6 +62,17 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Capture original last message before injection for database logging
+	originalLastMessage := "unknown"
+	if len(req.Messages) > 0 {
+		originalLastMessage = req.Messages[len(req.Messages)-1].Content
+	}
+
+	// Apply text injection if enabled
+	if h.config.ChatTextInjection.Enabled && h.config.ChatTextInjection.Text != "" {
+		h.applyTextInjection(&req)
+	}
+
 	// Log request messages if enabled
 	if h.config.Server.LogMessages {
 		log.Printf("=== Chat Request ===")
@@ -80,7 +91,7 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	respChan, backendMeta, err := h.backend.Chat(r.Context(), req)
 	if err != nil {
 		log.Printf("Backend error: %v", err)
-		h.logRequest(startTime, req, "", http.StatusInternalServerError, err.Error(), string(frontendReqJSON), "", backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL)
+		h.logRequest(startTime, req, "", http.StatusInternalServerError, err.Error(), string(frontendReqJSON), "", backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL, originalLastMessage)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -150,27 +161,63 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Log the request/response
-	h.logRequest(startTime, req, fullResponse.String(), http.StatusOK, "", string(frontendReqJSON), frontendRespBuilder.String(), backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL)
+	// Log the request/response (use original last message, not injected version)
+	h.logRequest(startTime, req, fullResponse.String(), http.StatusOK, "", string(frontendReqJSON), frontendRespBuilder.String(), backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL, originalLastMessage)
+}
+
+// applyTextInjection injects text into the appropriate user message
+func (h *ChatHandler) applyTextInjection(req *models.ChatRequest) {
+	injectionText := h.config.ChatTextInjection.Text
+	mode := h.config.ChatTextInjection.Mode
+
+	// Find the target message index based on mode
+	targetIndex := -1
+	if mode == "first" {
+		// Find first user message
+		for i, msg := range req.Messages {
+			if msg.Role == "user" {
+				targetIndex = i
+				break
+			}
+		}
+	} else { // mode == "last"
+		// Find last user message
+		for i := len(req.Messages) - 1; i >= 0; i-- {
+			if req.Messages[i].Role == "user" {
+				targetIndex = i
+				break
+			}
+		}
+	}
+
+	// If no user message found, nothing to inject
+	if targetIndex == -1 {
+		log.Printf("Text injection skipped: no user message found")
+		return
+	}
+
+	// Check if injection text already exists in the message
+	if strings.Contains(req.Messages[targetIndex].Content, injectionText) {
+		log.Printf("Text injection skipped: text already present in message")
+		return
+	}
+
+	// Inject the text
+	req.Messages[targetIndex].Content = req.Messages[targetIndex].Content + " " + injectionText
+	log.Printf("Text injection applied: added '%s' to %s user message", injectionText, mode)
 }
 
 // logRequest logs the request and response to the database
-func (h *ChatHandler) logRequest(startTime time.Time, req models.ChatRequest, response string, statusCode int, errMsg string, frontendReq string, frontendResp string, backendReq string, backendResp string, backendURL string) {
+func (h *ChatHandler) logRequest(startTime time.Time, req models.ChatRequest, response string, statusCode int, errMsg string, frontendReq string, frontendResp string, backendReq string, backendResp string, backendURL string, originalLastMessage string) {
 	latency := time.Since(startTime).Milliseconds()
 
-	// Extract prompt from messages
+	// Extract prompt from messages (note: this may include injected text, but that's sent to backend)
 	var prompt strings.Builder
 	for _, msg := range req.Messages {
 		prompt.WriteString(msg.Role)
 		prompt.WriteString(": ")
 		prompt.WriteString(msg.Content)
 		prompt.WriteString("\n")
-	}
-
-	// Extract last message
-	lastMessage := "unknown"
-	if len(req.Messages) > 0 {
-		lastMessage = req.Messages[len(req.Messages)-1].Content
 	}
 
 	entry := database.LogEntry{
@@ -191,7 +238,7 @@ func (h *ChatHandler) logRequest(startTime time.Time, req models.ChatRequest, re
 		FrontendResponse: frontendResp,
 		BackendRequest:   backendReq,
 		BackendResponse:  backendResp,
-		LastMessage:      lastMessage,
+		LastMessage:      originalLastMessage,
 	}
 
 	if err := h.db.Log(entry); err != nil {

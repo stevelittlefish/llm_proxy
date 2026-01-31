@@ -8,9 +8,10 @@ import (
 
 // Config represents the application configuration
 type Config struct {
-	Server   ServerConfig   `json:"server"`
-	Backend  BackendConfig  `json:"backend"`
-	Database DatabaseConfig `json:"database"`
+	Server            ServerConfig            `json:"server"`
+	Backend           BackendConfig           `json:"backend"`
+	Database          DatabaseConfig          `json:"database"`
+	ChatTextInjection ChatTextInjectionConfig `json:"chat_text_injection"`
 }
 
 // ServerConfig holds the server settings
@@ -37,6 +38,13 @@ type DatabaseConfig struct {
 	CleanupInterval int    `json:"cleanup_interval"`  // Cleanup interval in minutes (0 = disabled)
 }
 
+// ChatTextInjectionConfig holds the chat text injection settings
+type ChatTextInjectionConfig struct {
+	Enabled bool   `json:"enabled"` // Enable text injection
+	Text    string `json:"text"`    // Text to inject
+	Mode    string `json:"mode"`    // "first" or "last" - which user message to inject into
+}
+
 // Load reads and parses the configuration file
 func Load(path string) (*Config, error) {
 	file, err := os.Open(path)
@@ -57,6 +65,11 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("invalid backend type: %s (must be 'openai' or 'ollama')", config.Backend.Type)
 	}
 
+	// Validate chat text injection mode
+	if config.ChatTextInjection.Mode != "" && config.ChatTextInjection.Mode != "first" && config.ChatTextInjection.Mode != "last" {
+		return nil, fmt.Errorf("invalid chat_text_injection.mode: %s (must be 'first' or 'last')", config.ChatTextInjection.Mode)
+	}
+
 	// Set defaults
 	if config.Server.Host == "" {
 		config.Server.Host = "0.0.0.0"
@@ -75,6 +88,9 @@ func Load(path string) (*Config, error) {
 	}
 	if config.Database.CleanupInterval == 0 {
 		config.Database.CleanupInterval = 5
+	}
+	if config.ChatTextInjection.Mode == "" {
+		config.ChatTextInjection.Mode = "last"
 	}
 
 	return &config, nil

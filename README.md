@@ -6,15 +6,15 @@ The main motivation for creating this was to get the Home Assistant Ollama integ
 
 ## Features
 
-- **Ollama-Compatible API**: Presents an Ollama API interface, making it compatible with Home Assistant and other Ollama clients
-- **Multiple Backend Support**: 
-  - OpenAI-compatible APIs (e.g., llama.cpp)
-  - Ollama instances (for pass-through with logging)
-- **Streaming Support**: Full support for streaming responses
-- **Request/Response Logging**: All interactions logged to SQLite database with timestamps, latency, and error tracking
-- **Web UI**: Built-in web interface for viewing logs, request/response details, and configuration
-- **Docker Support**: Production-ready Docker images with health checks
-- **Minimal Dependencies**: Only requires Go standard library + SQLite driver
+- **Ollama-Compatible API** - Presents an Ollama API interface, compatible with Home Assistant and other Ollama clients
+- **Multiple Backend Support** - Connect to OpenAI-compatible APIs (e.g., llama.cpp) or Ollama instances
+- **Streaming Support** - Full support for streaming responses with minimal latency
+- **Request/Response Logging** - All interactions logged to SQLite with timestamps, latency, and error tracking
+- **Web UI** - Built-in interface for viewing logs, request/response details, and configuration
+- **Text Injection** - Automatically inject text into user messages (disabled by default) for example "/nothink" to disable thinking
+- **Docker Support** - Production-ready Docker images with health checks
+- **Minimal Dependencies** - Only requires Go standard library + SQLite driver
+- **Highly Configurable** - Fine-tune logging, timeouts, CORS, database cleanup, and more
 
 ## Quick Start with Docker
 
@@ -212,6 +212,35 @@ Create a `config.json` file based on the provided example:
 - The first cleanup runs immediately on startup, then repeats at the configured interval
 - Set `max_requests` to `0` or `cleanup_interval` to `0` to disable automatic cleanup
 - All request/response data is permanently deleted when cleaned up
+
+#### Chat Text Injection
+- `enabled`: Enable text injection (default: `false`)
+- `text`: The text string to inject (e.g., `"/nothink"`)
+- `mode`: Which user message to inject into - either `"first"` or `"last"` (default: `"last"`)
+
+**Text Injection Behavior:**
+- **Disabled by default** - must be explicitly enabled in config.json
+- **Only applies to `/api/chat` endpoint** (not `/api/generate`)
+- When enabled, automatically appends the configured text to the specified user message
+- **Smart injection** - checks if the text already exists and skips injection if present
+- Text is added with a preceding space: `"hello"` becomes `"hello /nothink"`
+- Injection happens after raw request logging but before the backend call
+- Useful for adding special tokens or instructions to all user messages
+
+**Example Configuration:**
+```json
+{
+  "chat_text_injection": {
+    "enabled": true,
+    "text": "/nothink",
+    "mode": "last"
+  }
+}
+```
+
+**Mode Options:**
+- `"first"`: Injects text into the first message with `role == "user"` in the messages array
+- `"last"`: Injects text into the last message with `role == "user"` in the messages array (typically the current user input)
 
 ## Usage
 
