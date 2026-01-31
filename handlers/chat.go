@@ -106,10 +106,8 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for resp := range respChan {
 		fullResponse.WriteString(resp.Message.Content)
 
-		// Store response for raw logging if enabled
-		if h.config.Server.LogRawResponses {
-			responses = append(responses, resp)
-		}
+		// Always store responses for database logging
+		responses = append(responses, resp)
 
 		if err := encoder.Encode(resp); err != nil {
 			log.Printf("Error encoding response: %v", err)

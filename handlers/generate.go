@@ -103,10 +103,8 @@ func (h *GenerateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for resp := range respChan {
 		fullResponse.WriteString(resp.Response)
 
-		// Store response for raw logging if enabled
-		if h.config.Server.LogRawResponses {
-			responses = append(responses, resp)
-		}
+		// Always store responses for database logging
+		responses = append(responses, resp)
 
 		if err := encoder.Encode(resp); err != nil {
 			log.Printf("Error encoding response: %v", err)
