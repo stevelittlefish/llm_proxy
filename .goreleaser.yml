@@ -34,7 +34,6 @@ builds:
 archives:
   - id: default
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    rlcp: true
     files:
       # Include documentation
       - README.md
