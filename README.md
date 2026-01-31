@@ -104,6 +104,15 @@ Create a `config.json` file based on the provided example:
 
 #### Database
 - `path`: Path to SQLite database file (default: `./data/llm_proxy.db`)
+- `max_requests`: Maximum number of requests to keep in the database (default: `100`). Older requests are automatically deleted during cleanup.
+- `cleanup_interval`: How often (in minutes) to run the cleanup task (default: `5`). Set to `0` to disable automatic cleanup.
+
+**Database Cleanup:**
+- The cleanup task runs automatically in the background based on the `cleanup_interval`
+- When triggered, it removes the oldest requests, keeping only the most recent `max_requests` entries
+- The first cleanup runs immediately on startup, then repeats at the configured interval
+- Set `max_requests` to `0` or `cleanup_interval` to `0` to disable automatic cleanup
+- All request/response data is permanently deleted when cleaned up
 
 ## Usage
 

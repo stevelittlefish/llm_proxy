@@ -32,7 +32,9 @@ type BackendConfig struct {
 
 // DatabaseConfig holds the database settings
 type DatabaseConfig struct {
-	Path string `json:"path"`
+	Path            string `json:"path"`
+	MaxRequests     int    `json:"max_requests"`      // Maximum number of requests to keep (0 = unlimited)
+	CleanupInterval int    `json:"cleanup_interval"`  // Cleanup interval in minutes (0 = disabled)
 }
 
 // Load reads and parses the configuration file
@@ -67,6 +69,12 @@ func Load(path string) (*Config, error) {
 	}
 	if config.Database.Path == "" {
 		config.Database.Path = "./llm_proxy.db"
+	}
+	if config.Database.MaxRequests == 0 {
+		config.Database.MaxRequests = 100
+	}
+	if config.Database.CleanupInterval == 0 {
+		config.Database.CleanupInterval = 5
 	}
 
 	return &config, nil

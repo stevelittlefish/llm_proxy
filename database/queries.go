@@ -151,3 +151,43 @@ func (db *DB) GetPreviousEntryID(currentID int64) (*int64, error) {
 
 	return &prevID, nil
 }
+
+// CleanupOldRequests removes the oldest requests, keeping only the most recent maxRequests
+// Returns the number of deleted rows
+func (db *DB) CleanupOldRequests(maxRequests int) (int64, error) {
+	// First, get the total count
+	var totalCount int64
+	err := db.conn.QueryRow("SELECT COUNT(*) FROM request").Scan(&totalCount)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count entries: %w", err)
+	}
+
+	// If we're under the limit, nothing to do
+	if totalCount <= int64(maxRequests) {
+		return 0, nil
+	}
+
+	// Delete all but the most recent maxRequests entries
+	// We do this by deleting entries with IDs less than the ID of the Nth newest entry
+	query := `
+		DELETE FROM request
+		WHERE id NOT IN (
+			SELECT id
+			FROM request
+			ORDER BY timestamp DESC, id DESC
+			LIMIT ?
+		)
+	`
+
+	result, err := db.conn.Exec(query, maxRequests)
+	if err != nil {
+		return 0, fmt.Errorf("failed to cleanup old requests: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	return rowsAffected, nil
+}

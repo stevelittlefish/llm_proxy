@@ -14,7 +14,36 @@ import (
 	"llm_proxy/database"
 	"llm_proxy/handlers"
 	"llm_proxy/middleware"
+	"time"
 )
+
+// startCleanupTask runs a periodic cleanup task to remove old database entries
+func startCleanupTask(db *database.DB, maxRequests int, intervalMinutes int, done chan struct{}) {
+	ticker := time.NewTicker(time.Duration(intervalMinutes) * time.Minute)
+	defer ticker.Stop()
+	defer close(done)
+
+	// Run cleanup immediately on startup
+	if deleted, err := db.CleanupOldRequests(maxRequests); err != nil {
+		log.Printf("Error during database cleanup: %v", err)
+	} else if deleted > 0 {
+		log.Printf("Database cleanup: removed %d old request(s)", deleted)
+	}
+
+	for {
+		select {
+		case <-ticker.C:
+			if deleted, err := db.CleanupOldRequests(maxRequests); err != nil {
+				log.Printf("Error during database cleanup: %v", err)
+			} else if deleted > 0 {
+				log.Printf("Database cleanup: removed %d old request(s)", deleted)
+			}
+		case <-done:
+			log.Println("Stopping database cleanup task...")
+			return
+		}
+	}
+}
 
 func main() {
 	// Parse command line flags
@@ -35,6 +64,17 @@ func main() {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 	defer db.Close()
+
+	// Start background cleanup task
+	cleanupDone := make(chan struct{})
+	if cfg.Database.CleanupInterval > 0 && cfg.Database.MaxRequests > 0 {
+		log.Printf("Starting database cleanup task: keeping max %d requests, running every %d minutes",
+			cfg.Database.MaxRequests, cfg.Database.CleanupInterval)
+		go startCleanupTask(db, cfg.Database.MaxRequests, cfg.Database.CleanupInterval, cleanupDone)
+	} else {
+		log.Printf("Database cleanup task disabled")
+		close(cleanupDone)
+	}
 
 	// Create backend based on configuration
 	var backendInstance backend.Backend
@@ -133,6 +173,12 @@ func main() {
 	// Wait for interrupt signal
 	<-sigChan
 	log.Println("Shutting down server...")
+
+	// Stop cleanup task
+	if cfg.Database.CleanupInterval > 0 && cfg.Database.MaxRequests > 0 {
+		cleanupDone <- struct{}{}
+		<-cleanupDone
+	}
 
 	if err := server.Close(); err != nil {
 		log.Printf("Error closing server: %v", err)
