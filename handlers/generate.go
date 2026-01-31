@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -39,8 +40,16 @@ func (h *GenerateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	startTime := time.Now()
 
+	// Read raw body bytes first for logging
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	// Parse into struct
 	var req models.GenerateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.Unmarshal(bodyBytes, &req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -61,8 +70,8 @@ func (h *GenerateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Printf("=======================")
 	}
 
-	// Capture frontend request as raw JSON
-	frontendReqJSON, _ := json.Marshal(req)
+	// Use raw body bytes for logging (truly raw JSON from the connection)
+	frontendReqJSON := bodyBytes
 
 	// Call backend
 	respChan, backendMeta, err := h.backend.Generate(r.Context(), req)
