@@ -105,3 +105,47 @@ func (db *DB) GetTotalCount() (int64, error) {
 	}
 	return count, nil
 }
+
+// GetNextEntryID returns the ID of the next entry (chronologically newer, higher ID)
+func (db *DB) GetNextEntryID(currentID int64) (*int64, error) {
+	query := `
+		SELECT id
+		FROM request
+		WHERE id > ?
+		ORDER BY id ASC
+		LIMIT 1
+	`
+
+	var nextID int64
+	err := db.conn.QueryRow(query, currentID).Scan(&nextID)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to query next entry: %w", err)
+	}
+
+	return &nextID, nil
+}
+
+// GetPreviousEntryID returns the ID of the previous entry (chronologically older, lower ID)
+func (db *DB) GetPreviousEntryID(currentID int64) (*int64, error) {
+	query := `
+		SELECT id
+		FROM request
+		WHERE id < ?
+		ORDER BY id DESC
+		LIMIT 1
+	`
+
+	var prevID int64
+	err := db.conn.QueryRow(query, currentID).Scan(&prevID)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to query previous entry: %w", err)
+	}
+
+	return &prevID, nil
+}

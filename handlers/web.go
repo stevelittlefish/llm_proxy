@@ -162,8 +162,30 @@ func (h *WebHandler) DetailsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get next and previous entry IDs for navigation
+	nextID, err := h.db.GetNextEntryID(id)
+	if err != nil {
+		log.Printf("Error getting next entry ID: %v", err)
+	}
+
+	prevID, err := h.db.GetPreviousEntryID(id)
+	if err != nil {
+		log.Printf("Error getting previous entry ID: %v", err)
+	}
+
+	// Prepare template data with navigation
+	data := struct {
+		*database.LogEntry
+		NextID *int64
+		PrevID *int64
+	}{
+		LogEntry: entry,
+		NextID:   nextID,
+		PrevID:   prevID,
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := templates.ExecuteTemplate(w, "details.html", entry); err != nil {
+	if err := templates.ExecuteTemplate(w, "details.html", data); err != nil {
 		log.Printf("Error executing template: %v", err)
 		http.Error(w, "Template error", http.StatusInternalServerError)
 		return

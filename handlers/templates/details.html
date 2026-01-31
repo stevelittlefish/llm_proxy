@@ -32,6 +32,13 @@
             color: #2c3e50;
             margin-bottom: 10px;
         }
+        .header-nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
         .back-link {
             display: inline-block;
             margin-top: 10px;
@@ -40,6 +47,32 @@
         }
         .back-link:hover {
             text-decoration: underline;
+        }
+        .nav-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .nav-btn {
+            padding: 8px 16px;
+            background: #3498db;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 14px;
+            transition: background 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .nav-btn:hover {
+            background: #2980b9;
+        }
+        .nav-btn:disabled,
+        .nav-btn.disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+            pointer-events: none;
         }
         .section {
             background: white;
@@ -170,9 +203,26 @@
 <body>
     <div class="container">
         <header>
-            <h1>📋 Request #{{.ID}}</h1>
-            <a href="/logs" class="back-link">← Back to list</a>
+            <div class="header-nav">
+                <div>
+                    <h1>📋 Request #{{.ID}}</h1>
+                    <a href="/logs" class="back-link">← Back to list</a>
+                </div>
+                <div class="nav-buttons">
+                    {{if .PrevID}}
+                        <a href="/logs/details?id={{.PrevID}}" class="nav-btn">← Previous</a>
+                    {{else}}
+                        <span class="nav-btn disabled">← Previous</span>
+                    {{end}}
+                    {{if .NextID}}
+                        <a href="/logs/details?id={{.NextID}}" class="nav-btn">Next →</a>
+                    {{else}}
+                        <span class="nav-btn disabled">Next →</span>
+                    {{end}}
+                </div>
+            </div>
         </header>
+
 
         <div class="section">
             <h2>Overview</h2>
