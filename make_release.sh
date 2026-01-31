@@ -3,7 +3,6 @@
 # Release script for LLM Proxy
 # Usage: ./make_release.sh <version> <message>
 # Example: ./make_release.sh v1.0.0 "Initial release"
-#
 
 set -e
 
