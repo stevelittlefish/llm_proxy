@@ -41,7 +41,6 @@ archives:
       # Include config as config.json (ready to use)
       - src: config.json.example
         dst: config.json
-        strip_parent: true
       # Include data directory with README
       - src: data/README
         dst: data/README
