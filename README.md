@@ -10,7 +10,9 @@ A lightweight, Go-based proxy server that provides an Ollama-compatible API whil
   - Ollama instances (for pass-through with logging)
 - **Streaming Support**: Full support for streaming responses
 - **Request/Response Logging**: All interactions logged to SQLite database with timestamps, latency, and error tracking
+- **Web UI**: Built-in web interface for viewing logs, request/response details, and configuration
 - **Model Mapping**: Configure model name translations between frontend and backend
+- **Docker Support**: Production-ready Docker images with health checks
 - **Minimal Dependencies**: Only requires Go standard library + SQLite driver
 
 ## Use Case
@@ -31,11 +33,13 @@ This proxy is designed to sit between Home Assistant (or any Ollama client) and 
 ### Build from Source
 
 ```bash
-git clone <repository-url>
+git clone git@lemon.com:go/llm_proxy
 cd llm_proxy
 go mod download
 go build -o llm_proxy
 ```
+
+Or see [DOCKER.md](DOCKER.md) for Docker installation instructions.
 
 ## Configuration
 
@@ -46,7 +50,7 @@ Create a `config.json` file based on the provided example:
   "server": {
     "host": "0.0.0.0",
     "port": 11434,
-    "enable_cors": true,
+    "enable_cors": false,
     "log_messages": false,
     "log_raw_requests": false,
     "log_raw_responses": false
@@ -58,13 +62,6 @@ Create a `config.json` file based on the provided example:
   },
   "database": {
     "path": "./llm_proxy.db"
-  },
-  "models": {
-    "default": "llama2",
-    "mappings": {
-      "llama2": "llama-2-7b-chat",
-      "codellama": "codellama-7b"
-    }
   }
 }
 ```
@@ -74,7 +71,7 @@ Create a `config.json` file based on the provided example:
 #### Server
 - `host`: IP address to bind to (default: `0.0.0.0`)
 - `port`: Port to listen on (default: `11434` - Ollama's default port)
-- `enable_cors`: Enable CORS middleware (default: `false`)
+- `enable_cors`: Enable CORS middleware (default: `false`) - this will allow any web page to directly access the server via javascript
 - `log_messages`: Log message content in human-readable format to stdout (default: `false`)
 - `log_raw_requests`: Log raw JSON request payloads (pretty-printed) to stdout (default: `false`)
 - `log_raw_responses`: Log raw JSON response payloads (pretty-printed) to stdout (default: `false`)
@@ -96,10 +93,6 @@ Create a `config.json` file based on the provided example:
 
 #### Database
 - `path`: Path to SQLite database file (default: `./llm_proxy.db`)
-
-#### Models
-- `default`: Default model name to use if none specified
-- `mappings`: Map Ollama model names to backend model names
 
 ## Usage
 
@@ -159,52 +152,23 @@ ollama:
 
 ## API Endpoints
 
+### Ollama-Compatible Endpoints
+
 The proxy implements the following Ollama API endpoints:
 
 - `POST /api/generate` - Text completion
 - `POST /api/chat` - Chat completion
 - `GET /api/tags` - List available models
 - `POST /api/show` - Show model information
-- `GET /health` - Health check endpoint
 
-## Database Schema
+### Web UI Endpoints
 
-Logs are stored in SQLite with the following schema:
+- `GET /` - Home page with configuration overview
+- `GET /logs` - Paginated list of all requests/responses
+- `GET /logs/details?id=<id>` - Detailed view of a specific request
+- `GET /health` - Health check endpoint (returns "OK")
 
-```sql
-CREATE TABLE logs (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  timestamp DATETIME NOT NULL,
-  endpoint TEXT NOT NULL,
-  method TEXT NOT NULL,
-  model TEXT,
-  prompt TEXT,
-  response TEXT,
-  status_code INTEGER,
-  latency_ms INTEGER,
-  stream BOOLEAN,
-  backend_type TEXT,
-  error TEXT
-);
-```
-
-### Query Examples
-
-View recent requests:
-```sql
-SELECT timestamp, endpoint, model, latency_ms 
-FROM logs 
-ORDER BY timestamp DESC 
-LIMIT 10;
-```
-
-Calculate average latency by model:
-```sql
-SELECT model, AVG(latency_ms) as avg_latency_ms, COUNT(*) as request_count
-FROM logs 
-WHERE error IS NULL
-GROUP BY model;
-```
+The web interface provides an easy way to browse logs, inspect request/response details, and monitor the proxy's configuration without needing direct database access.
 
 ## Backend Types
 
@@ -266,23 +230,34 @@ Example Ollama configuration:
 
 ```
 llm_proxy/
-├── main.go              # Entry point and server setup
+├── main.go                      # Entry point and server setup
 ├── config/
-│   └── config.go        # Configuration loading
+│   └── config.go                # Configuration loading
 ├── backend/
-│   ├── backend.go       # Backend interface
-│   ├── openai.go        # OpenAI backend implementation
-│   └── ollama.go        # Ollama backend implementation
+│   ├── backend.go               # Backend interface
+│   ├── openai.go                # OpenAI backend implementation
+│   └── ollama.go                # Ollama backend implementation
 ├── handlers/
-│   ├── generate.go      # /api/generate handler
-│   ├── chat.go          # /api/chat handler
-│   └── models.go        # /api/tags and /api/show handlers
+│   ├── generate.go              # /api/generate handler
+│   ├── chat.go                  # /api/chat handler
+│   ├── models.go                # /api/tags and /api/show handlers
+│   ├── web.go                   # Web UI handlers
+│   └── templates/               # HTML templates for web UI
+│       ├── home.html            # Configuration overview
+│       ├── logs.html            # Request logs list
+│       └── details.html         # Request details view
 ├── models/
-│   └── types.go         # Request/response types
+│   └── types.go                 # Request/response types
 ├── database/
-│   └── sqlite.go        # SQLite logging
-├── config.json.example  # Example configuration
-└── README.md           # This file
+│   ├── sqlite.go                # SQLite connection and initialization
+│   └── queries.go               # Database queries
+├── middleware/
+│   └── cors.go                  # CORS middleware
+├── Dockerfile                   # Docker build configuration
+├── docker-compose.yml           # Docker compose setup
+├── config.json.example          # Example configuration
+├── config.docker.json.example   # Example Docker configuration
+└── README.md                    # This file
 ```
 
 ## Troubleshooting
@@ -297,11 +272,6 @@ llm_proxy/
 - Ensure your client supports streaming responses
 - Check that the backend has streaming enabled
 
-### Model Not Found
-- Check model mappings in config.json
-- Verify the model exists on the backend
-- Use `/api/tags` to list available models
-
 ### Database Locked
 - Only one proxy instance can access the database at a time
 - Ensure no other processes are using the database file
@@ -310,10 +280,10 @@ llm_proxy/
 
 The proxy adds minimal latency (typically <10ms) as it streams responses directly from the backend without buffering. All logging is done asynchronously after the response is sent.
 
-## License
+## Docker Deployment
 
-[Your License Here]
+For production deployments, see [DOCKER.md](DOCKER.md) for detailed Docker and Docker Compose instructions.
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit issues and pull requests.
+Contributions are welcome! Please feel free to submit issues and pull requests to the repository.

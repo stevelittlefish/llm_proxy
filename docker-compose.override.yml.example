@@ -4,6 +4,8 @@ services:
   llm-proxy:
     ports:
       - 11435:11434
+      # To avoid conflicts with local ollama instance use this instead:
+      # - 11435:11434
     volumes:
       # Mount config file
       - ./config.json:/app/config/config.json:ro
