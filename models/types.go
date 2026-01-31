@@ -41,12 +41,14 @@ type ChatRequest struct {
 	Options  map[string]interface{} `json:"options,omitempty"`
 	Format   string                 `json:"format,omitempty"`
 	Template string                 `json:"template,omitempty"`
+	Tools    []interface{}          `json:"tools,omitempty"`
 }
 
 // Message represents a chat message
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role      string        `json:"role"`
+	Content   string        `json:"content"`
+	ToolCalls []interface{} `json:"tool_calls,omitempty"`
 }
 
 // ChatResponse represents an Ollama chat response
@@ -105,15 +107,16 @@ type OpenAICompletionRequest struct {
 
 // OpenAIChatRequest represents an OpenAI chat request
 type OpenAIChatRequest struct {
-	Model            string      `json:"model"`
-	Messages         []Message   `json:"messages"`
-	Stream           bool        `json:"stream,omitempty"`
-	MaxTokens        int         `json:"max_tokens,omitempty"`
-	Temperature      float64     `json:"temperature,omitempty"`
-	TopP             float64     `json:"top_p,omitempty"`
-	Stop             interface{} `json:"stop,omitempty"`
-	FrequencyPenalty float64     `json:"frequency_penalty,omitempty"`
-	PresencePenalty  float64     `json:"presence_penalty,omitempty"`
+	Model            string        `json:"model"`
+	Messages         []Message     `json:"messages"`
+	Stream           bool          `json:"stream,omitempty"`
+	MaxTokens        int           `json:"max_tokens,omitempty"`
+	Temperature      float64       `json:"temperature,omitempty"`
+	TopP             float64       `json:"top_p,omitempty"`
+	Stop             interface{}   `json:"stop,omitempty"`
+	FrequencyPenalty float64       `json:"frequency_penalty,omitempty"`
+	PresencePenalty  float64       `json:"presence_penalty,omitempty"`
+	Tools            []interface{} `json:"tools,omitempty"`
 }
 
 // OpenAICompletionResponse represents an OpenAI completion response

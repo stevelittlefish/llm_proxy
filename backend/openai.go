@@ -256,6 +256,7 @@ func (o *OpenAIBackend) Chat(ctx context.Context, req models.ChatRequest) (<-cha
 		Model:    req.Model,
 		Messages: req.Messages,
 		Stream:   req.Stream,
+		Tools:    req.Tools,
 	}
 
 	// Map Ollama options to OpenAI parameters
@@ -400,8 +401,9 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 					Model:     model,
 					CreatedAt: time.Now(),
 					Message: models.Message{
-						Role:    role,
-						Content: choice.Delta.Content,
+						Role:      role,
+						Content:   choice.Delta.Content,
+						ToolCalls: choice.Delta.ToolCalls,
 					},
 					Done: false,
 				}
@@ -468,6 +470,7 @@ func (o *OpenAIBackend) handleNonStreamingChat(body io.Reader, respChan chan<- m
 		// Calculate durations
 		totalDuration := time.Since(startTime).Nanoseconds()
 
+		// Message already includes ToolCalls field, so it passes through automatically
 		respChan <- models.ChatResponse{
 			Model:              model,
 			CreatedAt:          time.Now(),
