@@ -2,6 +2,8 @@
 
 A lightweight, Go-based proxy server that provides an Ollama-compatible API while forwarding requests to various LLM backends (OpenAI-compatible APIs like llama.cpp, or actual Ollama instances). All requests and responses are logged to an SQLite database for debugging and analysis.
 
+The main motivation for creating this was to get the Home Assistant Ollama integration to work with llama.cpp.  I've also always wanted a better way to log requests and responses from other LLM based apps (i.e. Open Web UI).  This proxy has a web interface which shows all of the messages including the full context and the system prompt which is really useful for debugging.
+
 ## Features
 
 - **Ollama-Compatible API**: Presents an Ollama API interface, making it compatible with Home Assistant and other Ollama clients
@@ -11,7 +13,6 @@ A lightweight, Go-based proxy server that provides an Ollama-compatible API whil
 - **Streaming Support**: Full support for streaming responses
 - **Request/Response Logging**: All interactions logged to SQLite database with timestamps, latency, and error tracking
 - **Web UI**: Built-in web interface for viewing logs, request/response details, and configuration
-- **Model Mapping**: Configure model name translations between frontend and backend
 - **Docker Support**: Production-ready Docker images with health checks
 - **Minimal Dependencies**: Only requires Go standard library + SQLite driver
 
@@ -30,10 +31,20 @@ This proxy is designed to sit between Home Assistant (or any Ollama client) and 
 - Go 1.21 or later
 - GCC (required for SQLite driver compilation)
 
+### Quickstart
+
+Clone the repository and then do:
+
+```bash
+cp config.json.example config.json
+# Edit the file to change settings
+go run .
+```
+
 ### Build from Source
 
 ```bash
-git clone git@lemon.com:go/llm_proxy
+git clone <REPOSITORY>
 cd llm_proxy
 go mod download
 go build -o llm_proxy
@@ -61,7 +72,7 @@ Create a `config.json` file based on the provided example:
     "timeout": 300
   },
   "database": {
-    "path": "./llm_proxy.db"
+    "path": "./data/llm_proxy.db"
   }
 }
 ```
@@ -92,7 +103,7 @@ Create a `config.json` file based on the provided example:
 - `timeout`: Request timeout in seconds (default: `300`)
 
 #### Database
-- `path`: Path to SQLite database file (default: `./llm_proxy.db`)
+- `path`: Path to SQLite database file (default: `./data/llm_proxy.db`)
 
 ## Usage
 
@@ -260,30 +271,16 @@ llm_proxy/
 └── README.md                    # This file
 ```
 
-## Troubleshooting
-
-### Connection Refused
-- Ensure the backend service (llama.cpp/Ollama) is running
-- Check the endpoint URL in config.json
-- Verify firewall settings
-
-### Streaming Not Working
-- The proxy uses chunked transfer encoding for streaming
-- Ensure your client supports streaming responses
-- Check that the backend has streaming enabled
-
-### Database Locked
-- Only one proxy instance can access the database at a time
-- Ensure no other processes are using the database file
-
 ## Performance
 
 The proxy adds minimal latency (typically <10ms) as it streams responses directly from the backend without buffering. All logging is done asynchronously after the response is sent.
 
 ## Docker Deployment
 
-For production deployments, see [DOCKER.md](DOCKER.md) for detailed Docker and Docker Compose instructions.
+See [DOCKER.md](DOCKER.md) for detailed Docker and Docker Compose instructions.
 
 ## Contributing
+
+I didn't write that much of the code, my good friend Claude did through the Cline plugin in Visual Studio Code.  It cost me $12.78 in tokens and took around half a day.  Not bad!
 
 Contributions are welcome! Please feel free to submit issues and pull requests to the repository.
