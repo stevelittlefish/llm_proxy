@@ -341,7 +341,7 @@ Use the included `make_release.sh` script to create and push a release:
 The script will:
 1. Validate the version format (must start with `v`)
 2. Check for uncommitted changes and warn if found
-3. Verify you're on the `main` branch
+3. Verify you're on the `master` branch
 4. Check that the tag doesn't already exist
 5. Show a summary and ask for confirmation
 6. Create an annotated tag with your message

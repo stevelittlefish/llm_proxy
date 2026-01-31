@@ -49,10 +49,10 @@ if ! git diff-index --quiet HEAD --; then
     fi
 fi
 
-# Check if we're on main branch
+# Check if we're on master branch
 CURRENT_BRANCH=$(git branch --show-current)
-if [ "$CURRENT_BRANCH" != "main" ]; then
-    echo -e "${YELLOW}Warning: You are on branch '$CURRENT_BRANCH', not 'main'${NC}"
+if [ "$CURRENT_BRANCH" != "master" ]; then
+    echo -e "${YELLOW}Warning: You are on branch '$CURRENT_BRANCH', not 'master'${NC}"
     read -p "Do you want to continue anyway? (y/N): " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
