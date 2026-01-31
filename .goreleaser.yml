@@ -17,12 +17,11 @@ builds:
       - CGO_ENABLED=1
     goos:
       - linux
-      - darwin
-      - windows
     goarch:
       - amd64
-    # Note: ARM64 cross-compilation with CGO (required for SQLite) is not supported
-    # on standard GitHub Actions runners. Users on ARM64 should build from source.
+    # Note: Cross-compilation with CGO (required for SQLite) is not supported
+    # on standard GitHub Actions runners. This build only targets Linux x86_64.
+    # Users on macOS, Windows, or ARM64 should build from source.
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
@@ -91,14 +90,19 @@ release:
   header: |
     ## LLM Proxy {{ .Tag }}
     
-    Download the appropriate archive for your operating system below.
+    ### Pre-built Binary (Linux x86_64)
+    
+    Download the Linux x86_64 archive below.
+    
+    **Note:** Due to CGO requirements for SQLite, pre-built binaries are only available for Linux x86_64. 
+    Users on macOS, Windows, or ARM64 should build from source. See the README for build instructions.
     
     ### Installation
     
-    1. Download the archive for your platform
+    1. Download the archive below
     2. Extract the archive
     3. Edit `config.json` to configure your backend
-    4. Run `./llm_proxy` (or `llm_proxy.exe` on Windows)
+    4. Run `./llm_proxy`
     
     See [README.md](https://github.com/stevelittlefish/llm_proxy/blob/main/README.md) for detailed documentation.
   footer: |
