@@ -2,14 +2,14 @@
   "server": {
     "host": "0.0.0.0",
     "port": 11434,
-    "enable_cors": true,
-    "log_messages": false,
-    "log_raw_requests": true,
-    "log_raw_responses": true
+    "enable_cors": false,
+    "log_messages": true,
+    "log_raw_requests": false,
+    "log_raw_responses": false
   },
   "backend": {
     "type": "openai",
-    "endpoint": "http://ai.lemon.com:8008",
+    "endpoint": "http://localhost:8008",
     "timeout": 300
   },
   "database": {
