@@ -12,6 +12,7 @@ The main motivation for creating this was to get the Home Assistant Ollama integ
 - **Request/Response Logging** - All interactions logged to SQLite with timestamps, latency, and error tracking
 - **Web UI** - Built-in interface for viewing logs, request/response details, and configuration
 - **Text Injection** - Automatically inject text into user messages (disabled by default) for example "/nothink" to disable thinking
+- **Tool Blacklist** - Filter out specific tools from chat requests before forwarding to the backend
 - **Docker Support** - Production-ready Docker images with health checks
 - **Minimal Dependencies** - Only requires Go standard library + SQLite driver
 - **Highly Configurable** - Fine-tune logging, timeouts, CORS, database cleanup, and more
@@ -168,6 +169,7 @@ log_raw_responses = false
 type = "openai"
 endpoint = "http://localhost:8080"
 timeout = 300
+tool_blacklist = []
 
 [backend_openai]
 force_prompt_cache = false
@@ -207,6 +209,27 @@ mode = "last"
   - For llama.cpp: typically `http://localhost:8080`
   - For Ollama: typically `http://localhost:11434`
 - `timeout`: Request timeout in seconds (default: `300`)
+- `tool_blacklist`: List of tool names to filter out from requests (default: `[]`)
+
+**Tool Blacklist:**
+- Filters out specific tools from chat requests before forwarding to the backend
+- **Only applies to `/api/chat` endpoint** (tools are not used in `/api/generate`)
+- Useful for blocking unwanted or problematic tools from reaching the LLM
+- Tools are matched by their function name
+- Filtered tools are logged to stdout for debugging
+
+**Example Configuration:**
+```toml
+[backend]
+tool_blacklist = ["web_search", "execute_code", "sensitive_tool"]
+```
+
+**Behavior:**
+- When a chat request includes tools, the proxy checks each tool's function name against the blacklist
+- Matching tools are removed from the request before forwarding to the backend
+- The LLM will not see or be able to use blacklisted tools
+- Filtering happens after text injection but before backend forwarding
+- A log message is printed for each filtered tool: `Filtering out blacklisted tool: <name>`
 
 #### Backend OpenAI
 - `force_prompt_cache`: When `true`, automatically adds `cache_prompt: true` to all OpenAI API requests (default: `false`)
