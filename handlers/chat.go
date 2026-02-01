@@ -192,19 +192,16 @@ func (h *ChatHandler) applyTextInjection(req *models.ChatRequest) {
 
 	// If no user message found, nothing to inject
 	if targetIndex == -1 {
-		log.Printf("Text injection skipped: no user message found")
 		return
 	}
 
 	// Check if injection text already exists in the message
 	if strings.Contains(req.Messages[targetIndex].Content, injectionText) {
-		log.Printf("Text injection skipped: text already present in message")
 		return
 	}
 
 	// Inject the text
 	req.Messages[targetIndex].Content = req.Messages[targetIndex].Content + " " + injectionText
-	log.Printf("Text injection applied: added '%s' to %s user message", injectionText, mode)
 }
 
 // logRequest logs the request and response to the database
