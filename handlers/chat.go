@@ -213,12 +213,40 @@ func (h *ChatHandler) filterTools(req *models.ChatRequest) {
 	req.Tools = filteredTools
 }
 
-// applyTextInjection injects text into the appropriate user message
+// applyTextInjection injects text into the appropriate message based on mode
 func (h *ChatHandler) applyTextInjection(req *models.ChatRequest) {
 	injectionText := h.config.ChatTextInjection.Text
 	mode := h.config.ChatTextInjection.Mode
 
-	// Find the target message index based on mode
+	if mode == "system" {
+		// Find existing system message
+		systemIndex := -1
+		for i, msg := range req.Messages {
+			if msg.Role == "system" {
+				systemIndex = i
+				break
+			}
+		}
+
+		if systemIndex != -1 {
+			// System message exists - check if text already present
+			if strings.Contains(req.Messages[systemIndex].Content, injectionText) {
+				return
+			}
+			// Append to existing system message
+			req.Messages[systemIndex].Content = req.Messages[systemIndex].Content + " " + injectionText
+		} else {
+			// No system message exists - create one at the beginning
+			systemMsg := models.Message{
+				Role:    "system",
+				Content: injectionText,
+			}
+			req.Messages = append([]models.Message{systemMsg}, req.Messages...)
+		}
+		return
+	}
+
+	// Find the target message index based on mode (first/last)
 	targetIndex := -1
 	if mode == "first" {
 		// Find first user message

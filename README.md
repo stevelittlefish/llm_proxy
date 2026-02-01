@@ -413,34 +413,33 @@ endpoint = "http://localhost:11435"
 
 ```
 llm_proxy/
-├── main.go                      # Entry point and server setup
+├── main.go                 # Entry point and server setup
 ├── config/
-│   └── config.go                # Configuration loading
+│   └── config.go           # Configuration loading
 ├── backend/
-│   ├── backend.go               # Backend interface
-│   ├── openai.go                # OpenAI backend implementation
-│   └── ollama.go                # Ollama backend implementation
+│   ├── backend.go          # Backend interface
+│   ├── openai.go           # OpenAI backend implementation
+│   └── ollama.go           # Ollama backend implementation
 ├── handlers/
-│   ├── generate.go              # /api/generate handler
-│   ├── chat.go                  # /api/chat handler
-│   ├── models.go                # /api/tags and /api/show handlers
-│   ├── web.go                   # Web UI handlers
-│   └── templates/               # HTML templates for web UI
-│       ├── home.html            # Configuration overview
-│       ├── logs.html            # Request logs list
-│       └── details.html         # Request details view
+│   ├── generate.go         # /api/generate handler
+│   ├── chat.go             # /api/chat handler
+│   ├── models.go           # /api/tags and /api/show handlers
+│   ├── web.go              # Web UI handlers
+│   └── templates/          # HTML templates for web UI
+│       ├── home.html       # Configuration overview
+│       ├── logs.html       # Request logs list
+│       └── details.html    # Request details view
 ├── models/
-│   └── types.go                 # Request/response types
+│   └── types.go            # Request/response types
 ├── database/
-│   ├── sqlite.go                # SQLite connection and initialization
-│   └── queries.go               # Database queries
+│   ├── sqlite.go           # SQLite connection and initialization
+│   └── queries.go          # Database queries
 ├── middleware/
-│   └── cors.go                  # CORS middleware
-├── Dockerfile                   # Docker build configuration
-├── docker-compose.yml           # Docker compose setup
-├── config.toml.example          # Example configuration
-├── config.docker.toml.example   # Example Docker configuration
-└── README.md                    # This file
+│   └── cors.go             # CORS middleware
+├── Dockerfile              # Docker build configuration
+├── docker-compose.yml      # Docker compose setup
+├── config.toml.example     # Example configuration
+└── README.md               # This file
 ```
 
 ## Performance

@@ -27,7 +27,7 @@ type ServerConfig struct {
 
 // BackendConfig holds the backend service settings
 type BackendConfig struct {
-	Type          string   `toml:"type"`           // "openai" or "ollama"
+	Type          string   `toml:"type"` // "openai" or "ollama"
 	Endpoint      string   `toml:"endpoint"`
 	Timeout       int      `toml:"timeout"`        // in seconds
 	ToolBlacklist []string `toml:"tool_blacklist"` // List of tool names to filter out
@@ -36,8 +36,8 @@ type BackendConfig struct {
 // DatabaseConfig holds the database settings
 type DatabaseConfig struct {
 	Path            string `toml:"path"`
-	MaxRequests     int    `toml:"max_requests"`      // Maximum number of requests to keep (0 = unlimited)
-	CleanupInterval int    `toml:"cleanup_interval"`  // Cleanup interval in minutes (0 = disabled)
+	MaxRequests     int    `toml:"max_requests"`     // Maximum number of requests to keep (0 = unlimited)
+	CleanupInterval int    `toml:"cleanup_interval"` // Cleanup interval in minutes (0 = disabled)
 }
 
 // BackendOpenAIConfig holds OpenAI-specific backend settings
@@ -49,18 +49,18 @@ type BackendOpenAIConfig struct {
 type ChatTextInjectionConfig struct {
 	Enabled bool   `toml:"enabled"` // Enable text injection
 	Text    string `toml:"text"`    // Text to inject
-	Mode    string `toml:"mode"`    // "first" or "last" - which user message to inject into
+	Mode    string `toml:"mode"`    // "first", "last", or "system" - which message to inject into
 }
 
 // Load reads and parses the configuration file
 func Load(path string) (*Config, error) {
 	var config Config
-	
+
 	metadata, err := toml.DecodeFile(path, &config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read/parse config file: %w", err)
 	}
-	
+
 	// Fail on unknown keys
 	if len(metadata.Undecoded()) > 0 {
 		return nil, fmt.Errorf("unknown keys in config file: %v", metadata.Undecoded())
@@ -72,8 +72,8 @@ func Load(path string) (*Config, error) {
 	}
 
 	// Validate chat text injection mode
-	if config.ChatTextInjection.Mode != "" && config.ChatTextInjection.Mode != "first" && config.ChatTextInjection.Mode != "last" {
-		return nil, fmt.Errorf("invalid chat_text_injection.mode: %s (must be 'first' or 'last')", config.ChatTextInjection.Mode)
+	if config.ChatTextInjection.Mode != "" && config.ChatTextInjection.Mode != "first" && config.ChatTextInjection.Mode != "last" && config.ChatTextInjection.Mode != "system" {
+		return nil, fmt.Errorf("invalid chat_text_injection.mode: %s (must be 'first', 'last', or 'system')", config.ChatTextInjection.Mode)
 	}
 
 	// Set defaults
