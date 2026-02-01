@@ -15,9 +15,9 @@ Pre-built Docker images are available from GitHub Container Registry. This is th
 
 ```bash
 # 1. Get the example config
-curl -O https://raw.githubusercontent.com/stevelittlefish/llm_proxy/master/config.json.example
-mv config.json.example config.json
-# Edit config.json to configure your backend
+curl -O https://raw.githubusercontent.com/stevelittlefish/llm_proxy/master/config.toml.example
+mv config.toml.example config.toml
+# Edit config.toml to configure your backend
 
 # 2. Create data directory
 mkdir -p data
@@ -26,7 +26,7 @@ mkdir -p data
 docker run -d \
   --name llm-proxy \
   -p 11434:11434 \
-  -v $(pwd)/config.json:/app/config/config.json:ro \
+  -v $(pwd)/config.toml:/app/config/config.toml:ro \
   -v $(pwd)/data:/app/data \
   ghcr.io/stevelittlefish/llm_proxy:latest
 ```
@@ -46,7 +46,7 @@ services:
     ports:
       - "11434:11434"
     volumes:
-      - ./config.json:/app/config/config.json:ro
+      - ./config.toml:/app/config/config.toml:ro
       - ./data:/app/data
 ```
 
@@ -83,17 +83,17 @@ If you prefer to build the Docker image from source (for development or customiz
 
 ### 1. Prepare Configuration
 
-First, create your `config.json` from the **Docker-specific** example:
+First, create your `config.toml` from the **Docker-specific** example:
 
 ```bash
-cp config.docker.json.example config.json
+cp config.docker.toml.example config.toml
 ```
 
 This example includes the correct paths for Docker containers:
 - `database.path` is set to `/app/data/llm_proxy.db` (inside the container)
 - `backend.endpoint` uses `host.docker.internal` to access services on the host
 
-Edit `config.json` to match your backend settings if needed.
+Edit `config.toml` to match your backend settings if needed.
 
 ### 2. Create Docker Compose Override
 
@@ -136,7 +136,7 @@ docker build -t llm-proxy .
 docker run -d \
   --name llm-proxy \
   -p 11435:11434 \
-  -v $(pwd)/config.json:/app/config/config.json:ro \
+  -v $(pwd)/config.toml:/app/config/config.toml:ro \
   -v $(pwd)/data:/app/data \
   llm-proxy
 ```
@@ -187,16 +187,16 @@ This approach allows each deployment to customize ports and paths without modify
 
 The `docker-compose.override.yml` sets up two volume mounts:
 
-1. **Config file** (`./config.json` → `/app/config/config.json`)
+1. **Config file** (`./config.toml` → `/app/config/config.toml`)
    - Mounted as read-only (`:ro`)
    - Contains server and backend configuration
    - Edit this file to change proxy settings
-   - Use `config.docker.json.example` as a template
+   - Use `config.docker.toml.example` as a template
 
 2. **Database directory** (`./data` → `/app/data`)
    - Stores the SQLite database (`llm_proxy.db`)
    - Persists request/response logs across container restarts
-   - The `config.docker.json.example` already has the correct path: `"/app/data/llm_proxy.db"`
+   - The `config.docker.toml.example` already has the correct path: `"/app/data/llm_proxy.db"`
 
 ### Environment Variables
 
@@ -234,7 +234,7 @@ docker-compose logs --tail=100
 
 ### Update Configuration
 
-After editing `config.json`:
+After editing `config.toml`:
 
 ```bash
 docker-compose restart
@@ -254,8 +254,8 @@ docker-compose up -d
 
 If the backend is running on your host machine:
 - Use `host.docker.internal` instead of `localhost` in your `backend.endpoint`
-- Example: `"endpoint": "http://host.docker.internal:8008"`
-- The `config.docker.json.example` already uses this format
+- Example: `endpoint = "http://host.docker.internal:8008"`
+- The `config.docker.toml.example` already uses this format
 
 On Linux, you may need to add this to your `docker-compose.override.yml`:
 
@@ -271,7 +271,7 @@ services:
 If you can't reach the proxy from your browser or Home Assistant:
 - Check that `docker-compose.override.yml` exists and has the ports section
 - Verify the port mapping: `docker-compose ps`
-- Ensure the config has `"host": "0.0.0.0"` (already set in `config.docker.json.example`)
+- Ensure the config has `host = "0.0.0.0"` (already set in `config.docker.toml.example`)
 - Check container logs: `docker-compose logs -f`
 
 ### Database permission errors
@@ -342,11 +342,11 @@ You can maintain multiple configuration files for different backends:
 
 ```bash
 # For llama.cpp backend
-cp config.docker.json.example config_llama_cpp.json
+cp config.docker.toml.example config_llama_cpp.toml
 
 # For Ollama backend
-cp config.docker.json.example config_ollama.json
-# Edit config_ollama.json to set "type": "ollama"
+cp config.docker.toml.example config_ollama.toml
+# Edit config_ollama.toml to set type = "ollama"
 ```
 
 Then reference the desired config in your `docker-compose.override.yml`:
@@ -355,7 +355,7 @@ Then reference the desired config in your `docker-compose.override.yml`:
 services:
   llm-proxy:
     volumes:
-      - ./config_llama_cpp.json:/app/config/config.json:ro
+      - ./config_llama_cpp.toml:/app/config/config.toml:ro
       - ./data:/app/data
 ```
 

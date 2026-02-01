@@ -20,7 +20,7 @@ go.work
 *.db-wal
 
 # Configuration (keep example)
-config.json
+config.toml
 
 # IDE
 .vscode/
@@ -37,5 +37,5 @@ Thumbs.db
 .dockerignore
 data/
 docker-compose.override.yml
-config_llama_cpp.json
-config_ollama.json
+config_llama_cpp.toml
+config_ollama.toml

@@ -38,9 +38,9 @@ archives:
       - README.md
       - LICENCE.md
       - DOCKER.md
-      # Include config as config.json (ready to use)
-      - src: config.json.example
-        dst: config.json
+      # Include config as config.toml (ready to use)
+      - src: config.toml.example
+        dst: config.toml
       # Include data directory with README
       - src: data/README
         dst: data/README
@@ -128,7 +128,7 @@ release:
     
     1. Download the archive below
     2. Extract the archive
-    3. Edit `config.json` to configure your backend
+    3. Edit `config.toml` to configure your backend
     4. Run `./llm_proxy`
     
     See [README.md](https://github.com/stevelittlefish/llm_proxy/blob/main/README.md) for detailed documentation.

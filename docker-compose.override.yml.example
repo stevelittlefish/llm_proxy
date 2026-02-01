@@ -8,6 +8,6 @@ services:
       # - 11435:11434
     volumes:
       # Mount config file
-      - ./config.json:/app/config/config.json:ro
+      - ./config.toml:/app/config/config.toml:ro
       # Mount database directory (allows persistence)
       - ./data:/app/data

@@ -47,7 +47,7 @@ func startCleanupTask(db *database.DB, maxRequests int, intervalMinutes int, don
 
 func main() {
 	// Parse command line flags
-	configPath := flag.String("config", "config.json", "Path to configuration file")
+	configPath := flag.String("config", "config.toml", "Path to configuration file")
 	flag.Parse()
 
 	// Load configuration

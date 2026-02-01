@@ -1,69 +1,68 @@
 package config
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
+
+	"github.com/BurntSushi/toml"
 )
 
 // Config represents the application configuration
 type Config struct {
-	Server            ServerConfig            `json:"server"`
-	Backend           BackendConfig           `json:"backend"`
-	BackendOpenAI     BackendOpenAIConfig     `json:"backend_openai"`
-	Database          DatabaseConfig          `json:"database"`
-	ChatTextInjection ChatTextInjectionConfig `json:"chat_text_injection"`
+	Server            ServerConfig            `toml:"server"`
+	Backend           BackendConfig           `toml:"backend"`
+	BackendOpenAI     BackendOpenAIConfig     `toml:"backend_openai"`
+	Database          DatabaseConfig          `toml:"database"`
+	ChatTextInjection ChatTextInjectionConfig `toml:"chat_text_injection"`
 }
 
 // ServerConfig holds the server settings
 type ServerConfig struct {
-	Host            string `json:"host"`
-	Port            int    `json:"port"`
-	EnableCORS      bool   `json:"enable_cors"`
-	LogMessages     bool   `json:"log_messages"`
-	LogRawRequests  bool   `json:"log_raw_requests"`
-	LogRawResponses bool   `json:"log_raw_responses"`
+	Host            string `toml:"host"`
+	Port            int    `toml:"port"`
+	EnableCORS      bool   `toml:"enable_cors"`
+	LogMessages     bool   `toml:"log_messages"`
+	LogRawRequests  bool   `toml:"log_raw_requests"`
+	LogRawResponses bool   `toml:"log_raw_responses"`
 }
 
 // BackendConfig holds the backend service settings
 type BackendConfig struct {
-	Type     string `json:"type"` // "openai" or "ollama"
-	Endpoint string `json:"endpoint"`
-	Timeout  int    `json:"timeout"` // in seconds
+	Type     string `toml:"type"` // "openai" or "ollama"
+	Endpoint string `toml:"endpoint"`
+	Timeout  int    `toml:"timeout"` // in seconds
 }
 
 // DatabaseConfig holds the database settings
 type DatabaseConfig struct {
-	Path            string `json:"path"`
-	MaxRequests     int    `json:"max_requests"`      // Maximum number of requests to keep (0 = unlimited)
-	CleanupInterval int    `json:"cleanup_interval"`  // Cleanup interval in minutes (0 = disabled)
+	Path            string `toml:"path"`
+	MaxRequests     int    `toml:"max_requests"`      // Maximum number of requests to keep (0 = unlimited)
+	CleanupInterval int    `toml:"cleanup_interval"`  // Cleanup interval in minutes (0 = disabled)
 }
 
 // BackendOpenAIConfig holds OpenAI-specific backend settings
 type BackendOpenAIConfig struct {
-	ForcePromptCache bool `json:"force_prompt_cache"` // Force prompt caching on all requests
+	ForcePromptCache bool `toml:"force_prompt_cache"` // Force prompt caching on all requests
 }
 
 // ChatTextInjectionConfig holds the chat text injection settings
 type ChatTextInjectionConfig struct {
-	Enabled bool   `json:"enabled"` // Enable text injection
-	Text    string `json:"text"`    // Text to inject
-	Mode    string `json:"mode"`    // "first" or "last" - which user message to inject into
+	Enabled bool   `toml:"enabled"` // Enable text injection
+	Text    string `toml:"text"`    // Text to inject
+	Mode    string `toml:"mode"`    // "first" or "last" - which user message to inject into
 }
 
 // Load reads and parses the configuration file
 func Load(path string) (*Config, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read config file: %w", err)
-	}
-	defer file.Close()
-
 	var config Config
-	decoder := json.NewDecoder(file)
-	decoder.DisallowUnknownFields() // Fail on unknown keys
-	if err := decoder.Decode(&config); err != nil {
-		return nil, fmt.Errorf("failed to parse config file: %w", err)
+	
+	metadata, err := toml.DecodeFile(path, &config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read/parse config file: %w", err)
+	}
+	
+	// Fail on unknown keys
+	if len(metadata.Undecoded()) > 0 {
+		return nil, fmt.Errorf("unknown keys in config file: %v", metadata.Undecoded())
 	}
 
 	// Validate backend type

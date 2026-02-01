@@ -24,9 +24,9 @@ The easiest way to run LLM Proxy is using the pre-built Docker images:
 
 ```bash
 # 1. Create a config file
-curl -O https://raw.githubusercontent.com/stevelittlefish/llm_proxy/master/config.json.example
-mv config.json.example config.json
-# Edit config.json to configure your backend
+curl -O https://raw.githubusercontent.com/stevelittlefish/llm_proxy/master/config.toml.example
+mv config.toml.example config.toml
+# Edit config.toml to configure your backend
 
 # 2. Create data directory
 mkdir -p data
@@ -35,7 +35,7 @@ mkdir -p data
 docker run -d \
   --name llm-proxy \
   -p 11434:11434 \
-  -v $(pwd)/config.json:/app/config/config.json:ro \
+  -v $(pwd)/config.toml:/app/config/config.toml:ro \
   -v $(pwd)/data:/app/data \
   ghcr.io/stevelittlefish/llm_proxy:latest
 ```
@@ -55,7 +55,7 @@ services:
     ports:
       - "11434:11434"
     volumes:
-      - ./config.json:/app/config/config.json:ro
+      - ./config.toml:/app/config/config.toml:ro
       - ./data:/app/data
 ```
 
@@ -63,9 +63,9 @@ Then run:
 
 ```bash
 # Get the example config
-curl -O https://raw.githubusercontent.com/stevelittlefish/llm_proxy/master/config.json.example
-mv config.json.example config.json
-# Edit config.json to configure your backend
+curl -O https://raw.githubusercontent.com/stevelittlefish/llm_proxy/master/config.toml.example
+mv config.toml.example config.toml
+# Edit config.toml to configure your backend
 
 # Create data directory
 mkdir -p data
@@ -106,7 +106,7 @@ The easiest way to get started is to download a pre-built binary from the [relea
    # Windows: use your preferred extraction tool
    ```
 
-3. Edit `config.json` to configure your backend
+3. Edit `config.toml` to configure your backend
 
 4. Run the proxy:
    ```bash
@@ -133,7 +133,7 @@ Clone the repository and then do:
 ```bash
 git clone https://github.com/stevelittlefish/llm_proxy
 cd llm_proxy
-cp config.json.example config.json
+cp config.toml.example config.toml
 # Edit the file to change settings
 go run .
 ```
@@ -153,27 +153,34 @@ See [DOCKER.md](DOCKER.md) for Docker and Docker Compose installation instructio
 
 ## Configuration
 
-Create a `config.json` file based on the provided example:
+Create a `config.toml` file based on the provided example:
 
-```json
-{
-  "server": {
-    "host": "0.0.0.0",
-    "port": 11434,
-    "enable_cors": false,
-    "log_messages": false,
-    "log_raw_requests": false,
-    "log_raw_responses": false
-  },
-  "backend": {
-    "type": "openai",
-    "endpoint": "http://localhost:8080",
-    "timeout": 300
-  },
-  "database": {
-    "path": "./data/llm_proxy.db"
-  }
-}
+```toml
+[server]
+host = "0.0.0.0"
+port = 11434
+enable_cors = false
+log_messages = false
+log_raw_requests = false
+log_raw_responses = false
+
+[backend]
+type = "openai"
+endpoint = "http://localhost:8080"
+timeout = 300
+
+[backend_openai]
+force_prompt_cache = false
+
+[database]
+path = "./data/llm_proxy.db"
+max_requests = 100
+cleanup_interval = 5
+
+[chat_text_injection]
+enabled = false
+text = "/nothink"
+mode = "last"
 ```
 
 ### Configuration Options
@@ -228,7 +235,7 @@ Create a `config.json` file based on the provided example:
 - `mode`: Which user message to inject into - either `"first"` or `"last"` (default: `"last"`)
 
 **Text Injection Behavior:**
-- **Disabled by default** - must be explicitly enabled in config.json
+- **Disabled by default** - must be explicitly enabled in config.toml
 - **Only applies to `/api/chat` endpoint** (not `/api/generate`)
 - When enabled, automatically appends the configured text to the specified user message
 - **Smart injection** - checks if the text already exists and skips injection if present
@@ -237,14 +244,11 @@ Create a `config.json` file based on the provided example:
 - Useful for adding special tokens or instructions to all user messages
 
 **Example Configuration:**
-```json
-{
-  "chat_text_injection": {
-    "enabled": true,
-    "text": "/nothink",
-    "mode": "last"
-  }
-}
+```toml
+[chat_text_injection]
+enabled = true
+text = "/nothink"
+mode = "last"
 ```
 
 **Mode Options:**
@@ -256,7 +260,7 @@ Create a `config.json` file based on the provided example:
 ### Start the Server
 
 ```bash
-./llm_proxy -config config.json
+./llm_proxy -config config.toml
 ```
 
 Or use the default config file location:
@@ -302,9 +306,11 @@ In Home Assistant, configure the Ollama integration to point to your proxy:
 
 ```yaml
 # configuration.yaml
-ollama:
-  base_url: "http://your-proxy-ip:11434"
-  model: "llama2"
+conversation:
+  llm:
+    provider: ollama
+    base_url: "http://your-proxy-ip:11434"
+    model: "llama2"
 ```
 
 ## API Endpoints
@@ -351,13 +357,10 @@ Use `"type": "ollama"` to wrap an existing Ollama instance:
 - No translation required
 
 Example Ollama configuration:
-```json
-{
-  "backend": {
-    "type": "ollama",
-    "endpoint": "http://localhost:11435"
-  }
-}
+```toml
+[backend]
+type = "ollama"
+endpoint = "http://localhost:11435"
 ```
 
 ## Architecture
@@ -412,8 +415,8 @@ llm_proxy/
 │   └── cors.go                  # CORS middleware
 ├── Dockerfile                   # Docker build configuration
 ├── docker-compose.yml           # Docker compose setup
-├── config.json.example          # Example configuration
-├── config.docker.json.example   # Example Docker configuration
+├── config.toml.example          # Example configuration
+├── config.docker.toml.example   # Example Docker configuration
 └── README.md                    # This file
 ```
 
@@ -462,7 +465,7 @@ git push origin v1.0.0
 
 Each release includes:
 - Pre-built binaries for multiple platforms
-- `config.json` (ready to edit)
+- `config.toml` (ready to edit)
 - Documentation (README.md, LICENCE.md, DOCKER.md)
 - Data directory with README
 - SHA256 checksums for verification
