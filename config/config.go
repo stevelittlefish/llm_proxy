@@ -10,6 +10,7 @@ import (
 type Config struct {
 	Server            ServerConfig            `json:"server"`
 	Backend           BackendConfig           `json:"backend"`
+	BackendOpenAI     BackendOpenAIConfig     `json:"backend_openai"`
 	Database          DatabaseConfig          `json:"database"`
 	ChatTextInjection ChatTextInjectionConfig `json:"chat_text_injection"`
 }
@@ -36,6 +37,11 @@ type DatabaseConfig struct {
 	Path            string `json:"path"`
 	MaxRequests     int    `json:"max_requests"`      // Maximum number of requests to keep (0 = unlimited)
 	CleanupInterval int    `json:"cleanup_interval"`  // Cleanup interval in minutes (0 = disabled)
+}
+
+// BackendOpenAIConfig holds OpenAI-specific backend settings
+type BackendOpenAIConfig struct {
+	ForcePromptCache bool `json:"force_prompt_cache"` // Force prompt caching on all requests
 }
 
 // ChatTextInjectionConfig holds the chat text injection settings

@@ -82,7 +82,10 @@ func main() {
 
 	switch cfg.Backend.Type {
 	case "openai":
-		backendInstance = backend.NewOpenAIBackend(cfg.Backend.Endpoint, cfg.Backend.Timeout)
+		backendInstance = backend.NewOpenAIBackend(cfg.Backend.Endpoint, cfg.Backend.Timeout, cfg.BackendOpenAI.ForcePromptCache)
+		if cfg.BackendOpenAI.ForcePromptCache {
+			log.Printf("OpenAI backend: prompt caching enabled")
+		}
 	case "ollama":
 		backendInstance = backend.NewOllamaBackend(cfg.Backend.Endpoint, cfg.Backend.Timeout)
 	default:

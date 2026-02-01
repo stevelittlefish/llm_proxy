@@ -1,3 +1,4 @@
+
 package models
 
 import "time"
@@ -106,6 +107,7 @@ type OpenAICompletionRequest struct {
 	Stop             interface{} `json:"stop,omitempty"`
 	FrequencyPenalty float64     `json:"frequency_penalty,omitempty"`
 	PresencePenalty  float64     `json:"presence_penalty,omitempty"`
+	CachePrompt      bool        `json:"cache_prompt,omitempty"`
 }
 
 // OpenAIChatRequest represents an OpenAI chat request
@@ -120,6 +122,7 @@ type OpenAIChatRequest struct {
 	FrequencyPenalty float64       `json:"frequency_penalty,omitempty"`
 	PresencePenalty  float64       `json:"presence_penalty,omitempty"`
 	Tools            []interface{} `json:"tools,omitempty"`
+	CachePrompt      bool          `json:"cache_prompt,omitempty"`
 }
 
 // OpenAICompletionResponse represents an OpenAI completion response

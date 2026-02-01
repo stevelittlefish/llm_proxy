@@ -16,14 +16,16 @@ import (
 
 // OpenAIBackend implements the Backend interface for OpenAI-compatible APIs
 type OpenAIBackend struct {
-	endpoint string
-	client   *http.Client
+	endpoint         string
+	client           *http.Client
+	forcePromptCache bool
 }
 
 // NewOpenAIBackend creates a new OpenAI backend
-func NewOpenAIBackend(endpoint string, timeout int) *OpenAIBackend {
+func NewOpenAIBackend(endpoint string, timeout int, forcePromptCache bool) *OpenAIBackend {
 	return &OpenAIBackend{
-		endpoint: endpoint,
+		endpoint:         endpoint,
+		forcePromptCache: forcePromptCache,
 		client: &http.Client{
 			Timeout: time.Duration(timeout) * time.Second,
 		},
@@ -37,9 +39,10 @@ func (o *OpenAIBackend) Generate(ctx context.Context, req models.GenerateRequest
 
 	// Translate Ollama request to OpenAI completion request
 	openaiReq := models.OpenAICompletionRequest{
-		Model:  req.Model,
-		Prompt: req.Prompt,
-		Stream: req.Stream,
+		Model:       req.Model,
+		Prompt:      req.Prompt,
+		Stream:      req.Stream,
+		CachePrompt: o.forcePromptCache,
 	}
 
 	// Map Ollama options to OpenAI parameters
@@ -338,10 +341,11 @@ func (o *OpenAIBackend) Chat(ctx context.Context, req models.ChatRequest) (<-cha
 
 	// Translate Ollama request to OpenAI chat request
 	openaiReq := models.OpenAIChatRequest{
-		Model:    req.Model,
-		Messages: convertedMessages,
-		Stream:   req.Stream,
-		Tools:    req.Tools,
+		Model:       req.Model,
+		Messages:    convertedMessages,
+		Stream:      req.Stream,
+		Tools:       req.Tools,
+		CachePrompt: o.forcePromptCache,
 	}
 
 	// Map Ollama options to OpenAI parameters

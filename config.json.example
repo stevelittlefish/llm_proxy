@@ -12,6 +12,9 @@
     "endpoint": "http://localhost:8008",
     "timeout": 300
   },
+  "backend_openai": {
+    "force_prompt_cache": false
+  },
   "database": {
     "path": "./data/llm_proxy.db",
     "max_requests": 100,

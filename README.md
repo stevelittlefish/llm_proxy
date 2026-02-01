@@ -201,6 +201,15 @@ Create a `config.json` file based on the provided example:
   - For Ollama: typically `http://localhost:11434`
 - `timeout`: Request timeout in seconds (default: `300`)
 
+#### Backend OpenAI
+- `force_prompt_cache`: When `true`, automatically adds `cache_prompt: true` to all OpenAI API requests (default: `false`)
+
+**Prompt Caching:**
+- **Only applies when using OpenAI backend** (`"type": "openai"`)
+- When enabled, instructs the back-end to cache the prompt for improved performance on repeated queries
+- The `cache_prompt` parameter is automatically injected into both `/api/chat` and `/api/generate` requests
+- Has no effect when using Ollama backend
+
 #### Database
 - `path`: Path to SQLite database file (default: `./data/llm_proxy.db`)
 - `max_requests`: Maximum number of requests to keep in the database (default: `100`). Older requests are automatically deleted during cleanup.
