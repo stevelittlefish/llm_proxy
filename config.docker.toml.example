@@ -10,6 +10,7 @@ log_raw_responses = false
 type = "openai"
 endpoint = "http://host.docker.internal:8008"
 timeout = 300
+tool_blacklist = []  # List of tool names to filter out from requests, e.g., ["tool1", "tool2"]
 
 [backend_openai]
 force_prompt_cache = false

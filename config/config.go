@@ -27,9 +27,10 @@ type ServerConfig struct {
 
 // BackendConfig holds the backend service settings
 type BackendConfig struct {
-	Type     string `toml:"type"` // "openai" or "ollama"
-	Endpoint string `toml:"endpoint"`
-	Timeout  int    `toml:"timeout"` // in seconds
+	Type          string   `toml:"type"`           // "openai" or "ollama"
+	Endpoint      string   `toml:"endpoint"`
+	Timeout       int      `toml:"timeout"`        // in seconds
+	ToolBlacklist []string `toml:"tool_blacklist"` // List of tool names to filter out
 }
 
 // DatabaseConfig holds the database settings

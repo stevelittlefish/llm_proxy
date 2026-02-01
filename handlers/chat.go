@@ -73,6 +73,11 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.applyTextInjection(&req)
 	}
 
+	// Filter blacklisted tools if configured
+	if len(h.config.Backend.ToolBlacklist) > 0 {
+		h.filterTools(&req)
+	}
+
 	// Log request messages if enabled
 	if h.config.Server.LogMessages {
 		log.Printf("=== Chat Request ===")
@@ -163,6 +168,49 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Log the request/response (use original last message, not injected version)
 	h.logRequest(startTime, req, fullResponse.String(), http.StatusOK, "", string(frontendReqJSON), frontendRespBuilder.String(), backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL, originalLastMessage)
+}
+
+// filterTools removes blacklisted tools from the request
+func (h *ChatHandler) filterTools(req *models.ChatRequest) {
+	if len(req.Tools) == 0 {
+		return
+	}
+
+	// Create a map for faster lookup
+	blacklist := make(map[string]bool)
+	for _, toolName := range h.config.Backend.ToolBlacklist {
+		blacklist[toolName] = true
+	}
+
+	// Filter out blacklisted tools
+	var filteredTools []interface{}
+	for _, tool := range req.Tools {
+		// Try to extract the tool name
+		toolMap, ok := tool.(map[string]interface{})
+		if !ok {
+			// If we can't parse it, keep it (be conservative)
+			filteredTools = append(filteredTools, tool)
+			continue
+		}
+
+		// Check if this is a function tool with a name
+		var toolName string
+		if funcField, ok := toolMap["function"].(map[string]interface{}); ok {
+			if name, ok := funcField["name"].(string); ok {
+				toolName = name
+			}
+		}
+
+		// If we couldn't extract a name or the tool is not blacklisted, keep it
+		if toolName == "" || !blacklist[toolName] {
+			filteredTools = append(filteredTools, tool)
+		} else {
+			// Log that we're filtering out this tool
+			log.Printf("Filtering out blacklisted tool: %s", toolName)
+		}
+	}
+
+	req.Tools = filteredTools
 }
 
 // applyTextInjection injects text into the appropriate user message
