@@ -86,7 +86,7 @@ If you prefer to build the Docker image from source (for development or customiz
 First, create your `config.toml` from the **Docker-specific** example:
 
 ```bash
-cp config.docker.toml.example config.toml
+cp config.toml.example config.toml
 ```
 
 This example includes the correct paths for Docker containers:
@@ -191,12 +191,12 @@ The `docker-compose.override.yml` sets up two volume mounts:
    - Mounted as read-only (`:ro`)
    - Contains server and backend configuration
    - Edit this file to change proxy settings
-   - Use `config.docker.toml.example` as a template
+   - Use `config.toml.example` as a template
 
 2. **Database directory** (`./data` → `/app/data`)
    - Stores the SQLite database (`llm_proxy.db`)
    - Persists request/response logs across container restarts
-   - The `config.docker.toml.example` already has the correct path: `"/app/data/llm_proxy.db"`
+   - The `config.toml.example` already has the correct path: `"/app/data/llm_proxy.db"`
 
 ### Environment Variables
 
@@ -255,7 +255,7 @@ docker-compose up -d
 If the backend is running on your host machine:
 - Use `host.docker.internal` instead of `localhost` in your `backend.endpoint`
 - Example: `endpoint = "http://host.docker.internal:8008"`
-- The `config.docker.toml.example` already uses this format
+- The `config.toml.example` already uses this format
 
 On Linux, you may need to add this to your `docker-compose.override.yml`:
 
@@ -271,7 +271,7 @@ services:
 If you can't reach the proxy from your browser or Home Assistant:
 - Check that `docker-compose.override.yml` exists and has the ports section
 - Verify the port mapping: `docker-compose ps`
-- Ensure the config has `host = "0.0.0.0"` (already set in `config.docker.toml.example`)
+- Ensure the config has `host = "0.0.0.0"` (already set in `config.toml.example`)
 - Check container logs: `docker-compose logs -f`
 
 ### Database permission errors
@@ -342,10 +342,10 @@ You can maintain multiple configuration files for different backends:
 
 ```bash
 # For llama.cpp backend
-cp config.docker.toml.example config_llama_cpp.toml
+cp config.toml.example config_llama_cpp.toml
 
 # For Ollama backend
-cp config.docker.toml.example config_ollama.toml
+cp config.toml.example config_ollama.toml
 # Edit config_ollama.toml to set type = "ollama"
 ```
 
