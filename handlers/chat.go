@@ -62,11 +62,15 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Capture original last message before injection for database logging
+	// Capture original messages before injection for database logging
 	originalLastMessage := "unknown"
 	if len(req.Messages) > 0 {
 		originalLastMessage = req.Messages[len(req.Messages)-1].Content
 	}
+
+	// Make a deep copy of messages for database logging (before injection)
+	originalMessages := make([]models.Message, len(req.Messages))
+	copy(originalMessages, req.Messages)
 
 	// Apply text injection if enabled
 	if h.config.ChatTextInjection.Enabled && h.config.ChatTextInjection.Text != "" {
@@ -96,7 +100,7 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	respChan, backendMeta, err := h.backend.Chat(r.Context(), req)
 	if err != nil {
 		log.Printf("Backend error: %v", err)
-		h.logRequest(startTime, req, "", http.StatusInternalServerError, err.Error(), string(frontendReqJSON), "", backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL, originalLastMessage)
+		h.logRequest(startTime, req.Model, req.Stream, originalMessages, "", http.StatusInternalServerError, err.Error(), string(frontendReqJSON), "", backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL, originalLastMessage)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -166,8 +170,8 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Log the request/response (use original last message, not injected version)
-	h.logRequest(startTime, req, fullResponse.String(), http.StatusOK, "", string(frontendReqJSON), frontendRespBuilder.String(), backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL, originalLastMessage)
+	// Log the request/response (use original messages, not injected version)
+	h.logRequest(startTime, req.Model, req.Stream, originalMessages, fullResponse.String(), http.StatusOK, "", string(frontendReqJSON), frontendRespBuilder.String(), backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL, originalLastMessage)
 }
 
 // filterTools removes blacklisted tools from the request
@@ -281,12 +285,12 @@ func (h *ChatHandler) applyTextInjection(req *models.ChatRequest) {
 }
 
 // logRequest logs the request and response to the database
-func (h *ChatHandler) logRequest(startTime time.Time, req models.ChatRequest, response string, statusCode int, errMsg string, frontendReq string, frontendResp string, backendReq string, backendResp string, backendURL string, originalLastMessage string) {
+func (h *ChatHandler) logRequest(startTime time.Time, model string, stream bool, originalMessages []models.Message, response string, statusCode int, errMsg string, frontendReq string, frontendResp string, backendReq string, backendResp string, backendURL string, originalLastMessage string) {
 	latency := time.Since(startTime).Milliseconds()
 
-	// Extract prompt from messages (note: this may include injected text, but that's sent to backend)
+	// Extract prompt from original messages (before injection)
 	var prompt strings.Builder
-	for _, msg := range req.Messages {
+	for _, msg := range originalMessages {
 		prompt.WriteString(msg.Role)
 		prompt.WriteString(": ")
 		prompt.WriteString(msg.Content)
@@ -297,12 +301,12 @@ func (h *ChatHandler) logRequest(startTime time.Time, req models.ChatRequest, re
 		Timestamp:        startTime,
 		Endpoint:         "/api/chat",
 		Method:           "POST",
-		Model:            req.Model,
+		Model:            model,
 		Prompt:           prompt.String(),
 		Response:         response,
 		StatusCode:       statusCode,
 		LatencyMs:        latency,
-		Stream:           req.Stream,
+		Stream:           stream,
 		BackendType:      h.config.Backend.Type,
 		Error:            errMsg,
 		FrontendURL:      fmt.Sprintf("http://%s:%d/api/chat", h.config.Server.Host, h.config.Server.Port),
