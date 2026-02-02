@@ -495,6 +495,6 @@ Each release includes:
 
 ## Contributing
 
-I didn't write that much of the code, my good friend Claude did through the Cline plugin in Visual Studio Code.  It cost me $12.78 in tokens and took around half a day.  Not bad!
+I didn't write that much of the code, my good friend Claude did through the Cline plugin in Visual Studio Code.  It cost me $12.78 in tokens and took around half a day.  Not bad! (EDIT: more like $25 now!)
 
 Contributions are welcome! Please feel free to submit issues and pull requests to the repository.
