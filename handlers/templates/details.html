@@ -29,9 +29,23 @@
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
+        .header-content {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 10px;
+        }
+        .logo {
+            height: 78px;
+            width: auto;
+        }
+        .logo-link {
+            display: block;
+            line-height: 0;
+        }
         h1 {
             color: #2c3e50;
-            margin-bottom: 10px;
+            margin: 0;
         }
         .header-nav {
             display: flex;
@@ -40,9 +54,12 @@
             flex-wrap: wrap;
             gap: 10px;
         }
-        .back-link {
-            display: inline-block;
+        .back-links {
+            display: flex;
+            gap: 15px;
             margin-top: 10px;
+        }
+        .back-link {
             color: #3498db;
             text-decoration: none;
         }
@@ -204,9 +221,15 @@
 <body>
     <div class="container">
         <header>
+            <div class="header-content">
+                <a href="/" class="logo-link" title="Back to homepage">
+                    <img src="/static/llama.png" alt="LLM Proxy Logo" class="logo">
+                </a>
+                <h1>Request #{{.ID}}</h1>
+            </div>
             <div class="header-nav">
-                <div>
-                    <h1>📋 Request #{{.ID}}</h1>
+                <div class="back-links">
+                    <a href="/" class="back-link">← Home</a>
                     <a href="/logs" class="back-link">← Back to list</a>
                 </div>
                 <div class="nav-buttons">
@@ -337,7 +360,8 @@
 
         <div class="section">
             <div class="header-nav">
-                <div>
+                <div class="back-links">
+                    <a href="/" class="back-link">← Home</a>
                     <a href="/logs" class="back-link">← Back to list</a>
                 </div>
                 <div class="nav-buttons">

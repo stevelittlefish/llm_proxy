@@ -29,9 +29,23 @@
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
+        .header-content {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 10px;
+        }
+        .logo {
+            height: 78px;
+            width: auto;
+        }
+        .logo-link {
+            display: block;
+            line-height: 0;
+        }
         h1 {
             color: #2c3e50;
-            margin-bottom: 10px;
+            margin: 0;
         }
         .stats {
             color: #7f8c8d;
@@ -153,7 +167,12 @@
 <body>
     <div class="container">
         <header>
-            <h1>🔄 LLM Proxy Request Log</h1>
+            <div class="header-content">
+                <a href="/" class="logo-link" title="Back to homepage">
+                    <img src="/static/llama.png" alt="LLM Proxy Logo" class="logo">
+                </a>
+                <h1>LLM Proxy Request Log</h1>
+            </div>
             <div class="stats">Total Requests: {{.TotalCount}} | Page {{.CurrentPage}} of {{.TotalPages}}</div>
         </header>
 

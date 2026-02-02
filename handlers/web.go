@@ -152,6 +152,40 @@ func (h *WebHandler) FaviconHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(data)
 }
 
+// StaticHandler serves static files from the embedded filesystem
+func (h *WebHandler) StaticHandler(w http.ResponseWriter, r *http.Request) {
+	// Get the file path (removing /static/ prefix)
+	filePath := "static" + r.URL.Path[len("/static"):]
+
+	data, err := staticFS.ReadFile(filePath)
+	if err != nil {
+		log.Printf("Error reading static file %s: %v", filePath, err)
+		http.NotFound(w, r)
+		return
+	}
+
+	// Determine content type based on file extension
+	contentType := "application/octet-stream"
+	if len(filePath) > 4 {
+		switch filePath[len(filePath)-4:] {
+		case ".png":
+			contentType = "image/png"
+		case ".jpg", "jpeg":
+			contentType = "image/jpeg"
+		case ".gif":
+			contentType = "image/gif"
+		case ".svg":
+			contentType = "image/svg+xml"
+		case ".ico":
+			contentType = "image/x-icon"
+		}
+	}
+
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "public, max-age=31536000") // Cache for 1 year
+	w.Write(data)
+}
+
 // DetailsHandler serves the details page for a specific request
 func (h *WebHandler) DetailsHandler(w http.ResponseWriter, r *http.Request) {
 	// Get ID from query params
