@@ -14,6 +14,9 @@ import (
 //go:embed templates/*.html
 var templateFS embed.FS
 
+//go:embed static/*
+var staticFS embed.FS
+
 var templates *template.Template
 
 const pageSize = 25
@@ -132,6 +135,21 @@ func (h *WebHandler) IndexHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Template error", http.StatusInternalServerError)
 		return
 	}
+}
+
+// FaviconHandler serves the favicon
+func (h *WebHandler) FaviconHandler(w http.ResponseWriter, r *http.Request) {
+	// Read the favicon from embedded FS
+	data, err := staticFS.ReadFile("static/llama.ico")
+	if err != nil {
+		log.Printf("Error reading favicon: %v", err)
+		http.NotFound(w, r)
+		return
+	}
+
+	w.Header().Set("Content-Type", "image/x-icon")
+	w.Header().Set("Cache-Control", "public, max-age=31536000") // Cache for 1 year
+	w.Write(data)
 }
 
 // DetailsHandler serves the details page for a specific request

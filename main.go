@@ -128,6 +128,7 @@ func main() {
 	})
 	mux.HandleFunc("/logs", webHandler.IndexHandler)
 	mux.HandleFunc("/logs/details", webHandler.DetailsHandler)
+	mux.HandleFunc("/favicon.ico", webHandler.FaviconHandler)
 
 	// Health check endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
