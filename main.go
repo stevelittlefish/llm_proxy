@@ -102,13 +102,18 @@ func main() {
 
 	// Prepare config data for web UI
 	homeData := map[string]interface{}{
-		"BackendType":     cfg.Backend.Type,
-		"BackendEndpoint": cfg.Backend.Endpoint,
-		"ServerHost":      cfg.Server.Host,
-		"ServerPort":      cfg.Server.Port,
-		"Timeout":         cfg.Backend.Timeout,
-		"DatabasePath":    cfg.Database.Path,
-		"EnableCORS":      cfg.Server.EnableCORS,
+		"BackendType":          cfg.Backend.Type,
+		"BackendEndpoint":      cfg.Backend.Endpoint,
+		"ServerHost":           cfg.Server.Host,
+		"ServerPort":           cfg.Server.Port,
+		"Timeout":              cfg.Backend.Timeout,
+		"DatabasePath":         cfg.Database.Path,
+		"EnableCORS":           cfg.Server.EnableCORS,
+		"ToolBlacklist":        cfg.Backend.ToolBlacklist,
+		"PromptCacheEnabled":   cfg.BackendOpenAI.ForcePromptCache,
+		"TextInjectionEnabled": cfg.ChatTextInjection.Enabled,
+		"TextInjectionText":    cfg.ChatTextInjection.Text,
+		"TextInjectionMode":    cfg.ChatTextInjection.Mode,
 	}
 
 	webHandler := handlers.NewWebHandler(db, homeData)
