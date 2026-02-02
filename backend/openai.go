@@ -108,6 +108,9 @@ func (o *OpenAIBackend) Generate(ctx context.Context, req models.GenerateRequest
 // handleStreamingCompletion processes streaming OpenAI responses and converts to Ollama format
 func (o *OpenAIBackend) handleStreamingCompletion(ctx context.Context, body io.Reader, respChan chan<- models.GenerateResponse, model string, metadata *BackendMetadata) {
 	scanner := bufio.NewScanner(body)
+	// Increase buffer size to handle large SSE events (e.g., verbose responses with timings)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024) // 1MB max per line
 	startTime := time.Now()
 	tokenCount := 0
 	var rawResponse strings.Builder
@@ -188,6 +191,11 @@ func (o *OpenAIBackend) handleStreamingCompletion(ctx context.Context, body io.R
 				return
 			}
 		}
+	}
+
+	// Check for scanner errors
+	if err := scanner.Err(); err != nil {
+		fmt.Printf("Scanner error in handleStreamingCompletion: %v\n", err)
 	}
 
 	// Send final done message if not already sent
@@ -411,6 +419,9 @@ func (o *OpenAIBackend) Chat(ctx context.Context, req models.ChatRequest) (<-cha
 // handleStreamingChat processes streaming OpenAI chat responses and converts to Ollama format
 func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader, respChan chan<- models.ChatResponse, model string, metadata *BackendMetadata) {
 	scanner := bufio.NewScanner(body)
+	// Increase buffer size to handle large SSE events (e.g., verbose responses with timings)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024) // 1MB max per line
 	startTime := time.Now()
 	tokenCount := 0
 	var rawResponse strings.Builder
@@ -604,6 +615,11 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 			},
 			Done: false,
 		}
+	}
+
+	// Check for scanner errors
+	if err := scanner.Err(); err != nil {
+		fmt.Printf("Scanner error in handleStreamingChat: %v\n", err)
 	}
 
 	// Send final done message if not already sent
