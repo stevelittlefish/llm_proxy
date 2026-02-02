@@ -3,6 +3,7 @@ package middleware
 import (
 	"log"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -54,16 +55,23 @@ func RequestLogging(verbose bool) func(http.Handler) http.Handler {
 				wroteHeader:    false,
 			}
 
-			// Log incoming request
-			log.Printf("[VERBOSE] Request: %s %s", r.Method, r.URL.Path)
+			// Only log API requests (URLs starting with /api)
+			isAPIRequest := strings.HasPrefix(r.URL.Path, "/api")
+
+			// Log incoming request for API endpoints only
+			if isAPIRequest {
+				log.Printf("[VERBOSE] Request: %s %s", r.Method, r.URL.Path)
+			}
 
 			// Call the next handler
 			next.ServeHTTP(wrapped, r)
 
-			// Log response with status code and latency
-			latency := time.Since(startTime)
-			log.Printf("[VERBOSE] Response: %s %s - Status: %d - Latency: %v",
-				r.Method, r.URL.Path, wrapped.statusCode, latency)
+			// Log response with status code and latency for API endpoints only
+			if isAPIRequest {
+				latency := time.Since(startTime)
+				log.Printf("[VERBOSE] Response: %s %s - Status: %d - Latency: %v",
+					r.Method, r.URL.Path, wrapped.statusCode, latency)
+			}
 		})
 	}
 }
