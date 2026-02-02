@@ -5,6 +5,7 @@ enable_cors = false
 log_messages = true
 log_raw_requests = false
 log_raw_responses = false
+verbose = false
 
 [backend]
 type = "openai"

@@ -109,10 +109,6 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Transfer-Encoding", "chunked")
 
-	if f, ok := w.(http.Flusher); ok {
-		f.Flush()
-	}
-
 	// Log when streaming starts if enabled
 	if h.config.Server.LogMessages {
 		log.Printf("=== Streaming Chat Response ===")
@@ -209,8 +205,10 @@ func (h *ChatHandler) filterTools(req *models.ChatRequest) {
 		if toolName == "" || !blacklist[toolName] {
 			filteredTools = append(filteredTools, tool)
 		} else {
-			// Log that we're filtering out this tool
-			log.Printf("Filtering out blacklisted tool: %s", toolName)
+			// Log that we're filtering out this tool (only if verbose)
+			if h.config.Server.Verbose {
+				log.Printf("[VERBOSE] Filtering out blacklisted tool: %s", toolName)
+			}
 		}
 	}
 
@@ -238,9 +236,15 @@ func (h *ChatHandler) applyTextInjection(req *models.ChatRequest) {
 				return
 			}
 			// Append to existing system message
+			if h.config.Server.Verbose {
+				log.Printf("[VERBOSE] Injecting text into existing system message: %q", injectionText)
+			}
 			req.Messages[systemIndex].Content = req.Messages[systemIndex].Content + " " + injectionText
 		} else {
 			// No system message exists - create one at the beginning
+			if h.config.Server.Verbose {
+				log.Printf("[VERBOSE] Creating new system message with injected text: %q", injectionText)
+			}
 			systemMsg := models.Message{
 				Role:    "system",
 				Content: injectionText,
@@ -281,6 +285,9 @@ func (h *ChatHandler) applyTextInjection(req *models.ChatRequest) {
 	}
 
 	// Inject the text
+	if h.config.Server.Verbose {
+		log.Printf("[VERBOSE] Injecting text into %s user message (index %d): %q", mode, targetIndex, injectionText)
+	}
 	req.Messages[targetIndex].Content = req.Messages[targetIndex].Content + " " + injectionText
 }
 

@@ -138,11 +138,20 @@ func main() {
 	// Start HTTP server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 
-	// Apply CORS middleware if enabled
+	// Apply middlewares
 	var handler http.Handler = mux
+
+	// Apply request logging middleware if verbose is enabled
+	handler = middleware.RequestLogging(cfg.Server.Verbose)(handler)
+
+	// Apply CORS middleware if enabled
 	if cfg.Server.EnableCORS {
 		handler = middleware.CORS(handler)
 		log.Printf("CORS enabled")
+	}
+
+	if cfg.Server.Verbose {
+		log.Printf("Verbose logging enabled")
 	}
 	if cfg.Server.LogMessages {
 		log.Printf("Message logging enabled - message content will be logged to stdout")

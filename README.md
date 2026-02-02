@@ -194,6 +194,7 @@ mode = "last"
 - `log_messages`: Log message content in human-readable format to stdout (default: `false`)
 - `log_raw_requests`: Log raw JSON request payloads (pretty-printed) to stdout (default: `false`)
 - `log_raw_responses`: Log raw JSON response payloads (pretty-printed) to stdout (default: `false`)
+- `verbose`: Enable verbose logging for debugging - logs filtered blacklisted tools, text injection operations, and all HTTP requests/responses with status codes (default: `false`)
 
 **Logging Options:**
 - All three logging options are independent and can be enabled together

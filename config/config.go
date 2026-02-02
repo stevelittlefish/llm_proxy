@@ -23,6 +23,7 @@ type ServerConfig struct {
 	LogMessages     bool   `toml:"log_messages"`
 	LogRawRequests  bool   `toml:"log_raw_requests"`
 	LogRawResponses bool   `toml:"log_raw_responses"`
+	Verbose         bool   `toml:"verbose"`
 }
 
 // BackendConfig holds the backend service settings

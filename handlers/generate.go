@@ -86,10 +86,6 @@ func (h *GenerateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Transfer-Encoding", "chunked")
 
-	if f, ok := w.(http.Flusher); ok {
-		f.Flush()
-	}
-
 	// Log when streaming starts if enabled
 	if h.config.Server.LogMessages {
 		log.Printf("=== Streaming Generate Response ===")
