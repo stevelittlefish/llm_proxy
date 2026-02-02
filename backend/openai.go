@@ -111,6 +111,8 @@ func (o *OpenAIBackend) handleStreamingCompletion(ctx context.Context, body io.R
 	startTime := time.Now()
 	tokenCount := 0
 	var rawResponse strings.Builder
+	sentFinalMessage := false
+	var finalDoneReason string
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -123,23 +125,8 @@ func (o *OpenAIBackend) handleStreamingCompletion(ctx context.Context, body io.R
 
 		data := strings.TrimPrefix(line, "data: ")
 		if data == "[DONE]" {
-			// Store raw response before sending final message
-			metadata.RawResponse = rawResponse.String()
-			// Send final response with done=true and performance metrics
-			totalDuration := time.Since(startTime).Nanoseconds()
-			respChan <- models.GenerateResponse{
-				Model:              model,
-				CreatedAt:          time.Now(),
-				Response:           "",
-				Done:               true,
-				DoneReason:         "stop",
-				TotalDuration:      totalDuration + 1,
-				PromptEvalCount:    1,
-				PromptEvalDuration: 1,
-				EvalCount:          tokenCount,
-				EvalDuration:       totalDuration,
-			}
-			return
+			// Don't return here - continue reading to capture full response
+			continue
 		}
 
 		var openaiResp models.OpenAICompletionResponse
@@ -151,23 +138,24 @@ func (o *OpenAIBackend) handleStreamingCompletion(ctx context.Context, body io.R
 			choice := openaiResp.Choices[0]
 
 			// Check if this is the final chunk with finish_reason
-			if choice.FinishReason != "" && choice.FinishReason != "null" {
-				// Store raw response before sending final message
-				metadata.RawResponse = rawResponse.String()
+			if choice.FinishReason != "" && choice.FinishReason != "null" && !sentFinalMessage {
+				finalDoneReason = choice.FinishReason
 				totalDuration := time.Since(startTime).Nanoseconds()
 				respChan <- models.GenerateResponse{
 					Model:              model,
 					CreatedAt:          time.Now(),
 					Response:           "",
 					Done:               true,
-					DoneReason:         choice.FinishReason,
+					DoneReason:         finalDoneReason,
 					TotalDuration:      totalDuration + 1,
 					PromptEvalCount:    1,
 					PromptEvalDuration: 1,
 					EvalCount:          tokenCount,
 					EvalDuration:       totalDuration,
 				}
-				return
+				sentFinalMessage = true
+				// Don't return - continue reading to capture full response
+				continue
 			}
 
 			text := choice.Text
@@ -185,25 +173,31 @@ func (o *OpenAIBackend) handleStreamingCompletion(ctx context.Context, body io.R
 			select {
 			case respChan <- ollamaResp:
 			case <-ctx.Done():
+				// Store response even when cancelled
+				metadata.RawResponse = rawResponse.String()
 				return
 			}
 		}
 	}
 
-	// Send final done message if not already sent
-	totalDuration := time.Since(startTime).Nanoseconds()
+	// Store complete raw response after reading entire stream
 	metadata.RawResponse = rawResponse.String()
-	respChan <- models.GenerateResponse{
-		Model:              model,
-		CreatedAt:          time.Now(),
-		Response:           "",
-		Done:               true,
-		DoneReason:         "stop",
-		TotalDuration:      totalDuration + 1,
-		PromptEvalCount:    1,
-		PromptEvalDuration: 1,
-		EvalCount:          tokenCount,
-		EvalDuration:       totalDuration,
+
+	// Send final done message if not already sent
+	if !sentFinalMessage {
+		totalDuration := time.Since(startTime).Nanoseconds()
+		respChan <- models.GenerateResponse{
+			Model:              model,
+			CreatedAt:          time.Now(),
+			Response:           "",
+			Done:               true,
+			DoneReason:         "stop",
+			TotalDuration:      totalDuration + 1,
+			PromptEvalCount:    1,
+			PromptEvalDuration: 1,
+			EvalCount:          tokenCount,
+			EvalDuration:       totalDuration,
+		}
 	}
 }
 
@@ -414,6 +408,8 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 	startTime := time.Now()
 	tokenCount := 0
 	var rawResponse strings.Builder
+	sentFinalMessage := false
+	var finalDoneReason string
 
 	// Tool call accumulation state
 	// Map of tool call index -> accumulated data
@@ -434,39 +430,8 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 
 		data := strings.TrimPrefix(line, "data: ")
 		if data == "[DONE]" {
-			// Send accumulated tool calls if any exist
-			if len(toolCallsState) > 0 {
-				toolCalls := buildToolCallsArray(toolCallsState)
-				respChan <- models.ChatResponse{
-					Model:     model,
-					CreatedAt: time.Now(),
-					Message: models.Message{
-						Role:      "assistant",
-						Content:   "",
-						ToolCalls: toolCalls,
-					},
-					Done: false,
-				}
-			}
-
-			// Store raw response before sending final message
-			metadata.RawResponse = rawResponse.String()
-			// Send final response with done=true and performance metrics
-			totalDuration := time.Since(startTime).Nanoseconds()
-			respChan <- models.ChatResponse{
-				Model:              model,
-				CreatedAt:          time.Now(),
-				Message:            models.Message{Role: "assistant", Content: ""},
-				Done:               true,
-				DoneReason:         "stop",
-				TotalDuration:      totalDuration + 1,
-				LoadDuration:       1,
-				PromptEvalCount:    1,
-				PromptEvalDuration: 1,
-				EvalCount:          tokenCount,
-				EvalDuration:       totalDuration,
-			}
-			return
+			// Don't return here - continue reading to capture full response
+			continue
 		}
 
 		var openaiResp models.OpenAIChatResponse
@@ -478,7 +443,7 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 			choice := openaiResp.Choices[0]
 
 			// Check if this is the final chunk with finish_reason
-			if choice.FinishReason != "" && choice.FinishReason != "null" {
+			if choice.FinishReason != "" && choice.FinishReason != "null" && !sentFinalMessage {
 				// Send accumulated tool calls if any exist
 				if len(toolCallsState) > 0 {
 					toolCalls := buildToolCallsArray(toolCallsState)
@@ -494,15 +459,14 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 					}
 				}
 
-				// Store raw response before sending final message
-				metadata.RawResponse = rawResponse.String()
+				finalDoneReason = choice.FinishReason
 				totalDuration := time.Since(startTime).Nanoseconds()
 				respChan <- models.ChatResponse{
 					Model:              model,
 					CreatedAt:          time.Now(),
 					Message:            models.Message{Role: "assistant", Content: ""},
 					Done:               true,
-					DoneReason:         choice.FinishReason,
+					DoneReason:         finalDoneReason,
 					TotalDuration:      totalDuration + 1,
 					LoadDuration:       1,
 					PromptEvalCount:    1,
@@ -510,7 +474,9 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 					EvalCount:          tokenCount,
 					EvalDuration:       totalDuration,
 				}
-				return
+				sentFinalMessage = true
+				// Don't return - continue reading to capture full response
+				continue
 			}
 
 			if choice.Delta != nil {
@@ -584,6 +550,8 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 					select {
 					case respChan <- ollamaResp:
 					case <-ctx.Done():
+						// Store response even when cancelled
+						metadata.RawResponse = rawResponse.String()
 						return
 					}
 				}
@@ -591,8 +559,11 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 		}
 	}
 
-	// Send accumulated tool calls if any exist
-	if len(toolCallsState) > 0 {
+	// Store complete raw response after reading entire stream
+	metadata.RawResponse = rawResponse.String()
+
+	// Send accumulated tool calls if any exist (only if final message not already sent)
+	if len(toolCallsState) > 0 && !sentFinalMessage {
 		toolCalls := buildToolCallsArray(toolCallsState)
 		respChan <- models.ChatResponse{
 			Model:     model,
@@ -607,20 +578,21 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 	}
 
 	// Send final done message if not already sent
-	totalDuration := time.Since(startTime).Nanoseconds()
-	metadata.RawResponse = rawResponse.String()
-	respChan <- models.ChatResponse{
-		Model:              model,
-		CreatedAt:          time.Now(),
-		Message:            models.Message{Role: "assistant", Content: ""},
-		Done:               true,
-		DoneReason:         "stop",
-		TotalDuration:      totalDuration + 1,
-		LoadDuration:       1,
-		PromptEvalCount:    1,
-		PromptEvalDuration: 1,
-		EvalCount:          tokenCount,
-		EvalDuration:       totalDuration,
+	if !sentFinalMessage {
+		totalDuration := time.Since(startTime).Nanoseconds()
+		respChan <- models.ChatResponse{
+			Model:              model,
+			CreatedAt:          time.Now(),
+			Message:            models.Message{Role: "assistant", Content: ""},
+			Done:               true,
+			DoneReason:         "stop",
+			TotalDuration:      totalDuration + 1,
+			LoadDuration:       1,
+			PromptEvalCount:    1,
+			PromptEvalDuration: 1,
+			EvalCount:          tokenCount,
+			EvalDuration:       totalDuration,
+		}
 	}
 }
 
