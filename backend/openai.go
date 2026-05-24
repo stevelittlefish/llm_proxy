@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -257,6 +259,12 @@ func (o *OpenAIBackend) handleNonStreamingCompletion(body io.Reader, respChan ch
 	}
 }
 
+func generateToolCallID() string {
+	b := make([]byte, 8)
+	rand.Read(b)
+	return "call-" + hex.EncodeToString(b)
+}
+
 // convertMessagesToOpenAI converts Ollama-format messages to OpenAI-format
 // by adding the "type" field to tool_calls and converting arguments to JSON string
 func convertMessagesToOpenAI(messages []models.Message) []models.Message {
@@ -327,6 +335,11 @@ func convertMessagesToOpenAI(messages []models.Message) []models.Message {
 					if k != "function" && k != "type" {
 						newToolCall[k] = v
 					}
+				}
+
+				// vLLM requires id on every tool call; generate one if absent
+				if _, hasID := newToolCall["id"]; !hasID {
+					newToolCall["id"] = generateToolCallID()
 				}
 
 				convertedToolCalls[j] = newToolCall
