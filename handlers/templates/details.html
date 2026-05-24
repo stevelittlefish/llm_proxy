@@ -92,6 +92,12 @@
             cursor: not-allowed;
             pointer-events: none;
         }
+        .nav-btn.download {
+            background: #27ae60;
+        }
+        .nav-btn.download:hover {
+            background: #219a52;
+        }
         .section {
             background: white;
             padding: 20px;
@@ -242,6 +248,7 @@
                     {{else}}
                         <span class="nav-btn disabled">Next →</span>
                     {{end}}
+                    <a href="/logs/download?id={{.ID}}" class="nav-btn download" download>⬇ Download .md</a>
                 </div>
             </div>
         </header>
@@ -373,6 +380,7 @@
                     {{else}}
                         <span class="nav-btn disabled">Next →</span>
                     {{end}}
+                    <a href="/logs/download?id={{.ID}}" class="nav-btn download" download>⬇ Download for LLM</a>
                 </div>
             </div>
         </div>

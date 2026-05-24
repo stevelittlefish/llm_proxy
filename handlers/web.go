@@ -11,6 +11,40 @@ import (
 	"llm_proxy/database"
 )
 
+// DownloadHandler serves a plain-text markdown file of a request log entry,
+// formatted for easy pasting into an LLM conversation for debugging.
+func (h *WebHandler) DownloadHandler(w http.ResponseWriter, r *http.Request) {
+	idStr := r.URL.Query().Get("id")
+	if idStr == "" {
+		http.Error(w, "Missing ID parameter", http.StatusBadRequest)
+		return
+	}
+
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid ID parameter", http.StatusBadRequest)
+		return
+	}
+
+	entry, err := h.db.GetEntryByID(id)
+	if err != nil {
+		log.Printf("Error getting entry: %v", err)
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	if entry == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	content := formatLLMLog(entry)
+	filename := fmt.Sprintf("request-%d.md", id)
+
+	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+	fmt.Fprint(w, content)
+}
+
 //go:embed templates/*.html
 var templateFS embed.FS
 

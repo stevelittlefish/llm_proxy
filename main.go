@@ -133,6 +133,7 @@ func main() {
 	})
 	mux.HandleFunc("/logs", webHandler.IndexHandler)
 	mux.HandleFunc("/logs/details", webHandler.DetailsHandler)
+	mux.HandleFunc("/logs/download", webHandler.DownloadHandler)
 	mux.HandleFunc("/favicon.ico", webHandler.FaviconHandler)
 	mux.HandleFunc("/static/", webHandler.StaticHandler)
 
