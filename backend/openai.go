@@ -673,8 +673,8 @@ func buildToolCallsArray(toolCallsState map[int]struct {
 			argsObj = map[string]interface{}{}
 		}
 
-		// Build Ollama-format tool call (simpler structure than OpenAI)
 		toolCall := map[string]interface{}{
+			"id": state.ID,
 			"function": map[string]interface{}{
 				"name":      state.Name,
 				"arguments": argsObj,
