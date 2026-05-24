@@ -266,15 +266,27 @@ func generateToolCallID() string {
 }
 
 // convertMessagesToOpenAI converts Ollama-format messages to OpenAI-format
-// by adding the "type" field to tool_calls and converting arguments to JSON string
+// by adding the "type" field to tool_calls and converting arguments to JSON string.
+// It also propagates generated tool call IDs to subsequent tool-result messages
+// that lack a tool_call_id, matching them positionally.
 func convertMessagesToOpenAI(messages []models.Message) []models.Message {
 	converted := make([]models.Message, len(messages))
+
+	// pendingIDs holds the ordered IDs of tool calls from the most recent
+	// assistant message, to be assigned positionally to following tool messages.
+	var pendingIDs []string
 
 	for i, msg := range messages {
 		converted[i] = msg
 
-		// If this message has tool_calls, convert them to OpenAI format
-		if len(msg.ToolCalls) > 0 {
+		switch msg.Role {
+		case "assistant":
+			pendingIDs = nil
+
+			if len(msg.ToolCalls) == 0 {
+				break
+			}
+
 			convertedToolCalls := make([]interface{}, len(msg.ToolCalls))
 
 			for j, tc := range msg.ToolCalls {
@@ -301,10 +313,8 @@ func convertMessagesToOpenAI(messages []models.Message) []models.Message {
 					if args, ok := fnField["arguments"]; ok {
 						switch argsTyped := args.(type) {
 						case string:
-							// Already a string, use as-is
 							newFunction["arguments"] = argsTyped
 						case map[string]interface{}, []interface{}:
-							// It's an object/array, convert to JSON string
 							argsJSON, err := json.Marshal(argsTyped)
 							if err == nil {
 								newFunction["arguments"] = string(argsJSON)
@@ -312,7 +322,6 @@ func convertMessagesToOpenAI(messages []models.Message) []models.Message {
 								newFunction["arguments"] = "{}"
 							}
 						default:
-							// Try to marshal whatever it is
 							argsJSON, err := json.Marshal(argsTyped)
 							if err == nil {
 								newFunction["arguments"] = string(argsJSON)
@@ -326,7 +335,6 @@ func convertMessagesToOpenAI(messages []models.Message) []models.Message {
 
 					newToolCall["function"] = newFunction
 				} else {
-					// Copy function field as-is if not a map
 					newToolCall["function"] = tcMap["function"]
 				}
 
@@ -343,9 +351,24 @@ func convertMessagesToOpenAI(messages []models.Message) []models.Message {
 				}
 
 				convertedToolCalls[j] = newToolCall
+
+				// Track this ID so we can assign it to the matching tool-result message
+				if id, ok := newToolCall["id"].(string); ok {
+					pendingIDs = append(pendingIDs, id)
+				}
 			}
 
 			converted[i].ToolCalls = convertedToolCalls
+
+		case "tool":
+			// Assign tool_call_id positionally from the preceding tool call batch
+			if converted[i].ToolCallID == "" && len(pendingIDs) > 0 {
+				converted[i].ToolCallID = pendingIDs[0]
+				pendingIDs = pendingIDs[1:]
+			}
+
+		default:
+			pendingIDs = nil
 		}
 	}
 

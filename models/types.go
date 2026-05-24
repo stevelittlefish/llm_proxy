@@ -48,10 +48,11 @@ type ChatRequest struct {
 
 // Message represents a chat message
 type Message struct {
-	Role      string        `json:"role"`
-	Content   string        `json:"content"`
-	Thinking  string        `json:"thinking,omitempty"`
-	ToolCalls []interface{} `json:"tool_calls,omitempty"`
+	Role       string        `json:"role"`
+	Content    string        `json:"content"`
+	Thinking   string        `json:"thinking,omitempty"`
+	ToolCalls  []interface{} `json:"tool_calls,omitempty"`
+	ToolCallID string        `json:"tool_call_id,omitempty"`
 }
 
 // ChatResponse represents an Ollama chat response

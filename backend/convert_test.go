@@ -50,3 +50,50 @@ func TestConvertMessagesToOpenAI_ToolCallGetsID(t *testing.T) {
 	out, _ := json.MarshalIndent(result, "", "  ")
 	t.Logf("converted messages:\n%s", out)
 }
+
+func TestConvertMessagesToOpenAI_ToolCallIDPropagatedToResult(t *testing.T) {
+	// Simulates HA sending a tool call (no id) followed by a tool result (no tool_call_id).
+	// The proxy must assign matching IDs so vLLM's template can correlate them.
+	input := []models.Message{
+		{
+			Role: "assistant",
+			ToolCalls: []interface{}{
+				map[string]interface{}{
+					"function": map[string]interface{}{
+						"name":      "HassTurnOn",
+						"arguments": map[string]interface{}{"area": "Office"},
+					},
+				},
+			},
+		},
+		{
+			Role:    "tool",
+			Content: `{"success":true}`,
+		},
+	}
+
+	result := convertMessagesToOpenAI(input)
+
+	if len(result) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(result))
+	}
+
+	tc, ok := result[0].ToolCalls[0].(map[string]interface{})
+	if !ok {
+		t.Fatal("tool call is not a map")
+	}
+	callID, _ := tc["id"].(string)
+	if callID == "" {
+		t.Fatal("expected tool call to have an id")
+	}
+
+	if result[1].ToolCallID == "" {
+		t.Error("expected tool result message to have tool_call_id set")
+	}
+	if result[1].ToolCallID != callID {
+		t.Errorf("tool_call_id mismatch: call id=%q, result tool_call_id=%q", callID, result[1].ToolCallID)
+	}
+
+	out, _ := json.MarshalIndent(result, "", "  ")
+	t.Logf("converted messages:\n%s", out)
+}
