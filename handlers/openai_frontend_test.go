@@ -55,6 +55,32 @@ func (fakeChatBackend) ListModels(context.Context) (models.ModelsResponse, error
 	}, nil
 }
 
+type recordingChatBackend struct {
+	lastReq models.ChatRequest
+}
+
+func (b *recordingChatBackend) Generate(context.Context, models.GenerateRequest) (<-chan models.GenerateResponse, *backend.BackendMetadata, error) {
+	ch := make(chan models.GenerateResponse)
+	close(ch)
+	return ch, &backend.BackendMetadata{URL: "http://backend/api/generate"}, nil
+}
+
+func (b *recordingChatBackend) Chat(ctx context.Context, req models.ChatRequest) (<-chan models.ChatResponse, *backend.BackendMetadata, error) {
+	b.lastReq = req
+	ch := make(chan models.ChatResponse, 1)
+	ch <- models.ChatResponse{
+		Model:     req.Model,
+		CreatedAt: time.Now(),
+		Done:      true,
+	}
+	close(ch)
+	return ch, &backend.BackendMetadata{URL: "http://backend/api/chat"}, nil
+}
+
+func (b *recordingChatBackend) ListModels(context.Context) (models.ModelsResponse, error) {
+	return models.ModelsResponse{}, nil
+}
+
 func TestOpenAIChatCompletionsHandler(t *testing.T) {
 	db, err := database.New(filepath.Join(t.TempDir(), "llm_proxy.db"))
 	if err != nil {
@@ -100,6 +126,38 @@ func TestOpenAIChatCompletionsHandler(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("logged count = %d, want 1", count)
+	}
+}
+
+func TestOpenAIChatCompletionsHandlerPreservesMaxTokens(t *testing.T) {
+	db, err := database.New(filepath.Join(t.TempDir(), "llm_proxy.db"))
+	if err != nil {
+		t.Fatalf("database.New() error = %v", err)
+	}
+	defer db.Close()
+
+	cfg := &config.Config{}
+	backend := &recordingChatBackend{}
+	handler := NewOpenAIChatCompletionsHandler(backend, db, cfg)
+
+	body := `{"model":"test-model","messages":[{"role":"user","content":"hello"}],"max_tokens":4}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if backend.lastReq.Options == nil {
+		t.Fatal("Options = nil, want num_predict")
+	}
+	got, ok := backend.lastReq.Options["num_predict"].(float64)
+	if !ok {
+		t.Fatalf("num_predict = %#v, want float64", backend.lastReq.Options["num_predict"])
+	}
+	if got != 4 {
+		t.Fatalf("num_predict = %v, want 4", got)
 	}
 }
 

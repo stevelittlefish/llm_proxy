@@ -65,6 +65,11 @@ func (h *OpenAIChatCompletionsHandler) ServeHTTP(w http.ResponseWriter, r *http.
 		Stream:   req.Stream,
 		Tools:    req.Tools,
 	}
+	if req.MaxTokens > 0 {
+		chatReq.Options = map[string]interface{}{
+			"num_predict": float64(req.MaxTokens),
+		}
+	}
 
 	originalLastMessage := lastMessageContent(chatReq.Messages)
 	originalMessages := cloneMessages(chatReq.Messages)

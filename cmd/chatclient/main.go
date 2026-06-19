@@ -26,9 +26,10 @@ type message struct {
 }
 
 type ollamaChatRequest struct {
-	Model    string    `json:"model"`
-	Messages []message `json:"messages"`
-	Stream   bool      `json:"stream"`
+	Model    string         `json:"model"`
+	Messages []message      `json:"messages"`
+	Stream   bool           `json:"stream"`
+	Options  map[string]int `json:"options,omitempty"`
 }
 
 type ollamaChatResponse struct {
@@ -38,9 +39,10 @@ type ollamaChatResponse struct {
 }
 
 type openAIChatRequest struct {
-	Model    string    `json:"model"`
-	Messages []message `json:"messages"`
-	Stream   bool      `json:"stream"`
+	Model     string    `json:"model"`
+	Messages  []message `json:"messages"`
+	Stream    bool      `json:"stream"`
+	MaxTokens int       `json:"max_tokens,omitempty"`
 }
 
 type openAIChatResponse struct {
@@ -54,7 +56,12 @@ func main() {
 	model := flag.String("model", "", "model name to use")
 	baseURL := flag.String("url", "", "proxy base URL override")
 	openAI := flag.Bool("openai", false, "use OpenAI-compatible API instead of Ollama API")
+	maxTokens := flag.Int("max-tokens", 0, "maximum response tokens to request; omitted when 0")
 	flag.Parse()
+
+	if *maxTokens < 0 {
+		exitf("max-tokens must be 0 or greater")
+	}
 
 	if *baseURL == "" {
 		cfg, err := loadServerConfig(*configPath)
@@ -90,6 +97,9 @@ func main() {
 	}
 	fmt.Printf("llm_proxy chat client (%s API)\n", apiName)
 	fmt.Printf("Connected to %s, model %s\n", *baseURL, *model)
+	if *maxTokens > 0 {
+		fmt.Printf("Maximum response tokens: %d\n", *maxTokens)
+	}
 	fmt.Println("Commands: /quit, /clear, /model NAME")
 
 	var history []message
@@ -131,9 +141,9 @@ func main() {
 
 		var reply string
 		if *openAI {
-			reply, err = sendOpenAIChat(client, *baseURL, *model, history)
+			reply, err = sendOpenAIChat(client, *baseURL, *model, history, *maxTokens)
 		} else {
-			reply, err = sendOllamaChat(client, *baseURL, *model, history)
+			reply, err = sendOllamaChat(client, *baseURL, *model, history, *maxTokens)
 		}
 		if err != nil {
 			fmt.Printf("\nError: %v\n", err)
@@ -145,11 +155,14 @@ func main() {
 	}
 }
 
-func sendOllamaChat(client *http.Client, baseURL string, model string, history []message) (string, error) {
+func sendOllamaChat(client *http.Client, baseURL string, model string, history []message, maxTokens int) (string, error) {
 	reqBody := ollamaChatRequest{
 		Model:    model,
 		Messages: history,
 		Stream:   true,
+	}
+	if maxTokens > 0 {
+		reqBody.Options = map[string]int{"num_predict": maxTokens}
 	}
 	resp, err := postJSON(client, baseURL+"/api/chat", reqBody)
 	if err != nil {
@@ -186,11 +199,14 @@ func sendOllamaChat(client *http.Client, baseURL string, model string, history [
 	return reply.String(), nil
 }
 
-func sendOpenAIChat(client *http.Client, baseURL string, model string, history []message) (string, error) {
+func sendOpenAIChat(client *http.Client, baseURL string, model string, history []message, maxTokens int) (string, error) {
 	reqBody := openAIChatRequest{
 		Model:    model,
 		Messages: history,
 		Stream:   true,
+	}
+	if maxTokens > 0 {
+		reqBody.MaxTokens = maxTokens
 	}
 	resp, err := postJSON(client, baseURL+"/v1/chat/completions", reqBody)
 	if err != nil {
