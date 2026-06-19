@@ -132,7 +132,7 @@ type OpenAICompletionResponse struct {
 	Created int64                    `json:"created"`
 	Model   string                   `json:"model"`
 	Choices []OpenAICompletionChoice `json:"choices"`
-	Usage   OpenAIUsage              `json:"usage,omitempty"`
+	Usage   *OpenAIUsage             `json:"usage,omitempty"`
 }
 
 // OpenAICompletionChoice represents a completion choice
@@ -149,7 +149,7 @@ type OpenAIChatResponse struct {
 	Created int64              `json:"created"`
 	Model   string             `json:"model"`
 	Choices []OpenAIChatChoice `json:"choices"`
-	Usage   OpenAIUsage        `json:"usage,omitempty"`
+	Usage   *OpenAIUsage       `json:"usage,omitempty"`
 }
 
 // OpenAIChatChoice represents a chat choice

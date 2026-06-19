@@ -249,6 +249,31 @@ func TestOpenAIChatCompletionsHandlerPreservesStreamingToolCalls(t *testing.T) {
 	assertOpenAIToolCall(t, firstChunk.Choices[0].Delta.ToolCalls, true)
 }
 
+func TestOpenAIChatCompletionsHandlerStreamingOmitsEmptyUsage(t *testing.T) {
+	db, err := database.New(filepath.Join(t.TempDir(), "llm_proxy.db"))
+	if err != nil {
+		t.Fatalf("database.New() error = %v", err)
+	}
+	defer db.Close()
+
+	cfg := &config.Config{}
+	handler := NewOpenAIChatCompletionsHandler(fakeChatBackend{}, db, cfg)
+
+	body := `{"model":"test-model","stream":true,"messages":[{"role":"user","content":"hello"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	bodyText := rec.Body.String()
+	if strings.Contains(bodyText, `"usage"`) {
+		t.Fatalf("stream response includes empty usage: %s", bodyText)
+	}
+}
+
 func assertOpenAIToolCall(t *testing.T, toolCalls []interface{}, wantIndex bool) {
 	t.Helper()
 	if len(toolCalls) != 1 {

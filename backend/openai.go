@@ -240,10 +240,10 @@ func (o *OpenAIBackend) handleNonStreamingCompletion(body io.Reader, respChan ch
 		// Extract token counts from usage if available, default to 1
 		promptTokens := 1
 		evalTokens := 1
-		if openaiResp.Usage.PromptTokens > 0 {
+		if openaiResp.Usage != nil && openaiResp.Usage.PromptTokens > 0 {
 			promptTokens = openaiResp.Usage.PromptTokens
 		}
-		if openaiResp.Usage.CompletionTokens > 0 {
+		if openaiResp.Usage != nil && openaiResp.Usage.CompletionTokens > 0 {
 			evalTokens = openaiResp.Usage.CompletionTokens
 		}
 
@@ -748,10 +748,10 @@ func (o *OpenAIBackend) handleNonStreamingChat(body io.Reader, respChan chan<- m
 		// Extract token counts from usage if available, default to 1
 		promptTokens := 1
 		evalTokens := 1
-		if openaiResp.Usage.PromptTokens > 0 {
+		if openaiResp.Usage != nil && openaiResp.Usage.PromptTokens > 0 {
 			promptTokens = openaiResp.Usage.PromptTokens
 		}
-		if openaiResp.Usage.CompletionTokens > 0 {
+		if openaiResp.Usage != nil && openaiResp.Usage.CompletionTokens > 0 {
 			evalTokens = openaiResp.Usage.CompletionTokens
 		}
 
