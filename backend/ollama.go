@@ -74,6 +74,8 @@ func (o *OllamaBackend) Generate(ctx context.Context, req models.GenerateRequest
 
 		var rawResponse strings.Builder
 		scanner := bufio.NewScanner(resp.Body)
+		buf := make([]byte, 0, 64*1024)
+		scanner.Buffer(buf, 1024*1024)
 		for scanner.Scan() {
 			line := scanner.Text()
 			rawResponse.WriteString(line)
@@ -147,6 +149,8 @@ func (o *OllamaBackend) Chat(ctx context.Context, req models.ChatRequest) (<-cha
 
 		var rawResponse strings.Builder
 		scanner := bufio.NewScanner(resp.Body)
+		buf := make([]byte, 0, 64*1024)
+		scanner.Buffer(buf, 1024*1024)
 		for scanner.Scan() {
 			// Log raw response from Ollama for debugging
 			rawBytes := scanner.Bytes()

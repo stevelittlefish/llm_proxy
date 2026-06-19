@@ -65,6 +65,73 @@ max_tokens_policy = "clamp"
 	}
 }
 
+func TestLoadRejectsUnknownKeys(t *testing.T) {
+	path := writeTestConfig(t, `
+[backend]
+type = "openai"
+endpoint = "http://localhost:8008"
+unexpected = true
+`)
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("Load() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "unknown keys") {
+		t.Fatalf("Load() error = %v, want unknown keys error", err)
+	}
+}
+
+func TestLoadRejectsInvalidChatTextInjectionMode(t *testing.T) {
+	path := writeTestConfig(t, `
+[backend]
+type = "openai"
+endpoint = "http://localhost:8008"
+
+[chat_text_injection]
+mode = "middle"
+`)
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("Load() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "chat_text_injection.mode") {
+		t.Fatalf("Load() error = %v, want chat_text_injection.mode error", err)
+	}
+}
+
+func TestLoadAppliesOperationalDefaults(t *testing.T) {
+	path := writeTestConfig(t, `
+[backend]
+type = "ollama"
+endpoint = "http://localhost:11434"
+`)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Server.Host != "0.0.0.0" {
+		t.Fatalf("Server.Host = %q, want 0.0.0.0", cfg.Server.Host)
+	}
+	if cfg.Server.Port != 11434 {
+		t.Fatalf("Server.Port = %d, want 11434", cfg.Server.Port)
+	}
+	if cfg.Backend.Timeout != 300 {
+		t.Fatalf("Backend.Timeout = %d, want 300", cfg.Backend.Timeout)
+	}
+	if cfg.Database.Path != "./llm_proxy.db" {
+		t.Fatalf("Database.Path = %q, want ./llm_proxy.db", cfg.Database.Path)
+	}
+	if cfg.Database.MaxRequests != 100 || cfg.Database.CleanupInterval != 5 {
+		t.Fatalf("database cleanup defaults = (%d, %d), want (100, 5)", cfg.Database.MaxRequests, cfg.Database.CleanupInterval)
+	}
+	if cfg.ChatTextInjection.Mode != "last" {
+		t.Fatalf("ChatTextInjection.Mode = %q, want last", cfg.ChatTextInjection.Mode)
+	}
+}
+
 func writeTestConfig(t *testing.T, content string) string {
 	t.Helper()
 
