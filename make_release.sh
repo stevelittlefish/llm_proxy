@@ -57,8 +57,7 @@ fi
 # Check if git repo is clean
 if ! git diff-index --quiet HEAD --; then
     echo -e "${YELLOW}Warning: You have uncommitted changes${NC}"
-    read -p "Do you want to continue anyway? (y/N): " -n 1 -r
-    echo
+    read -p "Do you want to continue anyway? (y/N): " -r
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
         echo "Aborted."
         exit 1
@@ -69,8 +68,7 @@ fi
 CURRENT_BRANCH=$(git branch --show-current)
 if [ "$CURRENT_BRANCH" != "master" ]; then
     echo -e "${YELLOW}Warning: You are on branch '$CURRENT_BRANCH', not 'master'${NC}"
-    read -p "Do you want to continue anyway? (y/N): " -n 1 -r
-    echo
+    read -p "Do you want to continue anyway? (y/N): " -r
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
         echo "Aborted."
         exit 1
@@ -96,8 +94,7 @@ echo "Branch:   $CURRENT_BRANCH"
 echo ""
 
 # Confirm
-read -p "Create and push this release? (y/N): " -n 1 -r
-echo
+read -p "Create and push this release? (y/N): " -r
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     echo "Aborted."
     exit 1
