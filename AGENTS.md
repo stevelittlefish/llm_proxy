@@ -56,7 +56,7 @@ GOCACHE=/tmp/llm_proxy_go_build CGO_ENABLED=0 go test ./...
   - Ollama-compatible: `/api/generate`, `/api/chat`, `/api/tags`, `/api/show`
   - OpenAI-compatible: `/v1/chat/completions`, `/v1/models`
 - OpenAI backend support lives in `backend/openai.go`; OpenAI-compatible frontend support lives in `handlers/openai_frontend.go`.
-- Text injection and tool blacklist behavior currently apply to `/api/chat`; do not assume they apply to `/v1/chat/completions`.
+- Text injection and tool blacklist behavior apply to both chat frontend endpoints: `/api/chat` and `/v1/chat/completions`.
 - Config parsing intentionally rejects unknown TOML keys.
 - `config.toml` and `data/` are local runtime files and are ignored by git. Keep changes in `config.toml.example` when documenting default config shape.
 

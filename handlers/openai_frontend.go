@@ -3,8 +3,10 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"llm_proxy/backend"
@@ -38,10 +40,23 @@ func (h *OpenAIChatCompletionsHandler) ServeHTTP(w http.ResponseWriter, r *http.
 
 	startTime := time.Now()
 
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+
 	var req models.OpenAIChatRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.Unmarshal(bodyBytes, &req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
+	}
+
+	if h.config.Server.LogRawRequests {
+		reqJSON, err := json.MarshalIndent(req, "", "  ")
+		if err == nil {
+			log.Printf("=== Raw OpenAI Chat Request ===\n%s\n================================", string(reqJSON))
+		}
 	}
 
 	chatReq := models.ChatRequest{
@@ -51,23 +66,38 @@ func (h *OpenAIChatCompletionsHandler) ServeHTTP(w http.ResponseWriter, r *http.
 		Tools:    req.Tools,
 	}
 
+	originalLastMessage := lastMessageContent(chatReq.Messages)
+	originalMessages := cloneMessages(chatReq.Messages)
+
+	applyChatFeatures(&chatReq, h.config)
+
+	if h.config.Server.LogMessages {
+		log.Printf("=== OpenAI Chat Request ===")
+		log.Printf("Model: %s", chatReq.Model)
+		log.Printf("Messages:")
+		for i, msg := range chatReq.Messages {
+			log.Printf("  [%d] %s: %s", i, msg.Role, msg.Content)
+		}
+		log.Printf("===========================")
+	}
+
 	respChan, backendMeta, err := h.backend.Chat(r.Context(), chatReq)
 	if err != nil {
 		log.Printf("Backend error: %v", err)
-		h.logRequest(startTime, chatReq, "", http.StatusInternalServerError, err.Error(), backendMeta.URL)
+		h.logRequest(startTime, chatReq.Model, chatReq.Stream, originalMessages, "", http.StatusInternalServerError, err.Error(), string(bodyBytes), "", backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL, originalLastMessage)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	if req.Stream {
-		h.streamResponse(w, r, req.Model, respChan, startTime, chatReq, backendMeta.URL)
+		h.streamResponse(w, req.Model, respChan, startTime, chatReq, string(bodyBytes), backendMeta, originalMessages, originalLastMessage)
 		return
 	}
 
-	h.writeResponse(w, req.Model, respChan, startTime, chatReq, backendMeta.URL)
+	h.writeResponse(w, req.Model, respChan, startTime, chatReq, string(bodyBytes), backendMeta, originalMessages, originalLastMessage)
 }
 
-func (h *OpenAIChatCompletionsHandler) streamResponse(w http.ResponseWriter, r *http.Request, model string, respChan <-chan models.ChatResponse, startTime time.Time, req models.ChatRequest, backendURL string) {
+func (h *OpenAIChatCompletionsHandler) streamResponse(w http.ResponseWriter, model string, respChan <-chan models.ChatResponse, startTime time.Time, req models.ChatRequest, frontendReq string, backendMeta *backend.BackendMetadata, originalMessages []models.Message, originalLastMessage string) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -75,6 +105,7 @@ func (h *OpenAIChatCompletionsHandler) streamResponse(w http.ResponseWriter, r *
 	flusher, _ := w.(http.Flusher)
 	created := time.Now().Unix()
 	var fullResponse string
+	var frontendResp strings.Builder
 
 	for resp := range respChan {
 		if resp.Done {
@@ -105,7 +136,7 @@ func (h *OpenAIChatCompletionsHandler) streamResponse(w http.ResponseWriter, r *
 			log.Printf("Failed to marshal OpenAI stream chunk: %v", err)
 			continue
 		}
-		fmt.Fprintf(w, "data: %s\n\n", data)
+		writeSSE(w, &frontendResp, string(data))
 		if flusher != nil {
 			flusher.Flush()
 		}
@@ -126,17 +157,26 @@ func (h *OpenAIChatCompletionsHandler) streamResponse(w http.ResponseWriter, r *
 	}
 	data, err := json.Marshal(finalChunk)
 	if err == nil {
-		fmt.Fprintf(w, "data: %s\n\n", data)
+		writeSSE(w, &frontendResp, string(data))
 	}
-	fmt.Fprint(w, "data: [DONE]\n\n")
+	writeSSE(w, &frontendResp, "[DONE]")
 	if flusher != nil {
 		flusher.Flush()
 	}
 
-	h.logRequest(startTime, req, fullResponse, http.StatusOK, "", backendURL)
+	if h.config.Server.LogMessages {
+		log.Printf("=== OpenAI Chat Response Complete ===")
+		log.Printf("Full Response: %s", fullResponse)
+		log.Printf("=====================================")
+	}
+	if h.config.Server.LogRawResponses {
+		log.Printf("=== Raw OpenAI Chat Response ===\n%s\n================================", frontendResp.String())
+	}
+
+	h.logRequest(startTime, req.Model, req.Stream, originalMessages, fullResponse, http.StatusOK, "", frontendReq, strings.TrimRight(frontendResp.String(), "\n"), backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL, originalLastMessage)
 }
 
-func (h *OpenAIChatCompletionsHandler) writeResponse(w http.ResponseWriter, model string, respChan <-chan models.ChatResponse, startTime time.Time, req models.ChatRequest, backendURL string) {
+func (h *OpenAIChatCompletionsHandler) writeResponse(w http.ResponseWriter, model string, respChan <-chan models.ChatResponse, startTime time.Time, req models.ChatRequest, frontendReq string, backendMeta *backend.BackendMetadata, originalMessages []models.Message, originalLastMessage string) {
 	var fullResponse string
 	for resp := range respChan {
 		fullResponse += resp.Message.Content
@@ -160,44 +200,61 @@ func (h *OpenAIChatCompletionsHandler) writeResponse(w http.ResponseWriter, mode
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(response); err != nil {
+	var frontendResp strings.Builder
+	if err := json.NewEncoder(io.MultiWriter(w, &frontendResp)).Encode(response); err != nil {
 		log.Printf("Failed to encode OpenAI response: %v", err)
 		return
 	}
 
-	h.logRequest(startTime, req, fullResponse, http.StatusOK, "", backendURL)
-}
-
-func (h *OpenAIChatCompletionsHandler) logRequest(startTime time.Time, req models.ChatRequest, response string, statusCode int, errMsg string, backendURL string) {
-	lastMessage := "unknown"
-	if len(req.Messages) > 0 {
-		lastMessage = req.Messages[len(req.Messages)-1].Content
+	if h.config.Server.LogMessages {
+		log.Printf("=== OpenAI Chat Response Complete ===")
+		log.Printf("Full Response: %s", fullResponse)
+		log.Printf("=====================================")
+	}
+	if h.config.Server.LogRawResponses {
+		log.Printf("=== Raw OpenAI Chat Response ===\n%s\n================================", frontendResp.String())
 	}
 
-	promptBytes, err := json.Marshal(req.Messages)
-	prompt := ""
-	if err == nil {
-		prompt = string(promptBytes)
+	h.logRequest(startTime, req.Model, req.Stream, originalMessages, fullResponse, http.StatusOK, "", frontendReq, strings.TrimRight(frontendResp.String(), "\n"), backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL, originalLastMessage)
+}
+
+func writeSSE(w io.Writer, capture *strings.Builder, data string) {
+	line := fmt.Sprintf("data: %s\n\n", data)
+	fmt.Fprint(w, line)
+	capture.WriteString(line)
+}
+
+func (h *OpenAIChatCompletionsHandler) logRequest(startTime time.Time, model string, stream bool, originalMessages []models.Message, response string, statusCode int, errMsg string, frontendReq string, frontendResp string, backendReq string, backendResp string, backendURL string, originalLastMessage string) {
+	var prompt strings.Builder
+	for _, msg := range originalMessages {
+		prompt.WriteString(msg.Role)
+		prompt.WriteString(": ")
+		prompt.WriteString(msg.Content)
+		prompt.WriteString("\n")
 	}
 
 	entry := database.LogEntry{
 		Timestamp:   startTime,
 		Endpoint:    "/v1/chat/completions",
 		Method:      "POST",
-		Model:       req.Model,
-		Prompt:      prompt,
+		Model:       model,
+		Prompt:      prompt.String(),
 		Response:    response,
 		StatusCode:  statusCode,
 		LatencyMs:   time.Since(startTime).Milliseconds(),
-		Stream:      req.Stream,
+		Stream:      stream,
 		BackendType: h.config.Backend.Type,
 		Error:       errMsg,
 		FrontendURL: fmt.Sprintf("http://%s:%d/v1/chat/completions",
 			h.config.Server.Host,
 			h.config.Server.Port,
 		),
-		BackendURL:  backendURL,
-		LastMessage: lastMessage,
+		BackendURL:       backendURL,
+		FrontendRequest:  frontendReq,
+		FrontendResponse: frontendResp,
+		BackendRequest:   backendReq,
+		BackendResponse:  backendResp,
+		LastMessage:      originalLastMessage,
 	}
 
 	if err := h.db.Log(entry); err != nil {

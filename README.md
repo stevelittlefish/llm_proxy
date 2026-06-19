@@ -211,7 +211,7 @@ mode = "last"
 
 **Tool Blacklist:**
 - Filters out specific tools from chat requests before forwarding to the backend
-- **Only applies to `/api/chat` endpoint** (tools are not used in `/api/generate`)
+- **Only applies to chat endpoints** (`/api/chat` and `/v1/chat/completions`; tools are not used in `/api/generate`)
 - Useful for blocking unwanted or problematic tools from reaching the LLM
 - Tools are matched by their function name
 - Filtered tools are logged to stdout for debugging
@@ -257,7 +257,7 @@ tool_blacklist = ["web_search", "execute_code", "sensitive_tool"]
 
 **Text Injection Behavior:**
 - **Disabled by default** - must be explicitly enabled in config.toml
-- **Only applies to `/api/chat` endpoint** (not `/api/generate` or `/v1/chat/completions`)
+- **Only applies to chat endpoints** (`/api/chat` and `/v1/chat/completions`, not `/api/generate`)
 - When enabled, automatically appends the configured text to the specified user message
 - **Smart injection** - checks if the text already exists and skips injection if present
 - Text is added with a preceding space: `"hello"` becomes `"hello /nothink"`

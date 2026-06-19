@@ -62,25 +62,10 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Capture original messages before injection for database logging
-	originalLastMessage := "unknown"
-	if len(req.Messages) > 0 {
-		originalLastMessage = req.Messages[len(req.Messages)-1].Content
-	}
+	originalLastMessage := lastMessageContent(req.Messages)
+	originalMessages := cloneMessages(req.Messages)
 
-	// Make a deep copy of messages for database logging (before injection)
-	originalMessages := make([]models.Message, len(req.Messages))
-	copy(originalMessages, req.Messages)
-
-	// Apply text injection if enabled
-	if h.config.ChatTextInjection.Enabled && h.config.ChatTextInjection.Text != "" {
-		h.applyTextInjection(&req)
-	}
-
-	// Filter blacklisted tools if configured
-	if len(h.config.Backend.ToolBlacklist) > 0 {
-		h.filterTools(&req)
-	}
+	applyChatFeatures(&req, h.config)
 
 	// Log request messages if enabled
 	if h.config.Server.LogMessages {
@@ -168,127 +153,6 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Log the request/response (use original messages, not injected version)
 	h.logRequest(startTime, req.Model, req.Stream, originalMessages, fullResponse.String(), http.StatusOK, "", string(frontendReqJSON), frontendRespBuilder.String(), backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL, originalLastMessage)
-}
-
-// filterTools removes blacklisted tools from the request
-func (h *ChatHandler) filterTools(req *models.ChatRequest) {
-	if len(req.Tools) == 0 {
-		return
-	}
-
-	// Create a map for faster lookup
-	blacklist := make(map[string]bool)
-	for _, toolName := range h.config.Backend.ToolBlacklist {
-		blacklist[toolName] = true
-	}
-
-	// Filter out blacklisted tools
-	var filteredTools []interface{}
-	for _, tool := range req.Tools {
-		// Try to extract the tool name
-		toolMap, ok := tool.(map[string]interface{})
-		if !ok {
-			// If we can't parse it, keep it (be conservative)
-			filteredTools = append(filteredTools, tool)
-			continue
-		}
-
-		// Check if this is a function tool with a name
-		var toolName string
-		if funcField, ok := toolMap["function"].(map[string]interface{}); ok {
-			if name, ok := funcField["name"].(string); ok {
-				toolName = name
-			}
-		}
-
-		// If we couldn't extract a name or the tool is not blacklisted, keep it
-		if toolName == "" || !blacklist[toolName] {
-			filteredTools = append(filteredTools, tool)
-		} else {
-			// Log that we're filtering out this tool (only if verbose)
-			if h.config.Server.Verbose {
-				log.Printf("[VERBOSE] Filtering out blacklisted tool: %s", toolName)
-			}
-		}
-	}
-
-	req.Tools = filteredTools
-}
-
-// applyTextInjection injects text into the appropriate message based on mode
-func (h *ChatHandler) applyTextInjection(req *models.ChatRequest) {
-	injectionText := h.config.ChatTextInjection.Text
-	mode := h.config.ChatTextInjection.Mode
-
-	if mode == "system" {
-		// Find existing system message
-		systemIndex := -1
-		for i, msg := range req.Messages {
-			if msg.Role == "system" {
-				systemIndex = i
-				break
-			}
-		}
-
-		if systemIndex != -1 {
-			// System message exists - check if text already present
-			if strings.Contains(req.Messages[systemIndex].Content, injectionText) {
-				return
-			}
-			// Append to existing system message
-			if h.config.Server.Verbose {
-				log.Printf("[VERBOSE] Injecting text into existing system message: %q", injectionText)
-			}
-			req.Messages[systemIndex].Content = req.Messages[systemIndex].Content + " " + injectionText
-		} else {
-			// No system message exists - create one at the beginning
-			if h.config.Server.Verbose {
-				log.Printf("[VERBOSE] Creating new system message with injected text: %q", injectionText)
-			}
-			systemMsg := models.Message{
-				Role:    "system",
-				Content: injectionText,
-			}
-			req.Messages = append([]models.Message{systemMsg}, req.Messages...)
-		}
-		return
-	}
-
-	// Find the target message index based on mode (first/last)
-	targetIndex := -1
-	if mode == "first" {
-		// Find first user message
-		for i, msg := range req.Messages {
-			if msg.Role == "user" {
-				targetIndex = i
-				break
-			}
-		}
-	} else { // mode == "last"
-		// Find last user message
-		for i := len(req.Messages) - 1; i >= 0; i-- {
-			if req.Messages[i].Role == "user" {
-				targetIndex = i
-				break
-			}
-		}
-	}
-
-	// If no user message found, nothing to inject
-	if targetIndex == -1 {
-		return
-	}
-
-	// Check if injection text already exists in the message
-	if strings.Contains(req.Messages[targetIndex].Content, injectionText) {
-		return
-	}
-
-	// Inject the text
-	if h.config.Server.Verbose {
-		log.Printf("[VERBOSE] Injecting text into %s user message (index %d): %q", mode, targetIndex, injectionText)
-	}
-	req.Messages[targetIndex].Content = req.Messages[targetIndex].Content + " " + injectionText
 }
 
 // logRequest logs the request and response to the database
