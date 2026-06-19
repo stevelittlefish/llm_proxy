@@ -1,12 +1,5 @@
 # Build stage
-FROM golang:1.21-bookworm AS builder
-
-# Install build dependencies for SQLite
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    libc6-dev \
-    libsqlite3-dev \
-    && rm -rf /var/lib/apt/lists/*
+FROM golang:1.25-bookworm AS builder
 
 # Set working directory
 WORKDIR /build
@@ -21,8 +14,7 @@ RUN go mod download
 COPY . .
 
 # Build the application
-# CGO is required for SQLite
-RUN CGO_ENABLED=1 go build -o llm_proxy .
+RUN CGO_ENABLED=0 go build -o llm_proxy .
 
 # Runtime stage
 FROM debian:bookworm-slim
@@ -30,7 +22,6 @@ FROM debian:bookworm-slim
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    libsqlite3-0 \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
