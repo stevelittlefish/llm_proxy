@@ -14,6 +14,7 @@ The main motivation for creating this was to get the Home Assistant Ollama integ
 - **Web UI** - Built-in interface for viewing logs, request/response details, and configuration
 - **Text Injection** - Automatically inject text into user messages (disabled by default) for example "/nothink" to disable thinking
 - **Tool Blacklist** - Filter out specific tools from chat requests before forwarding to the backend
+- **Request Sanitization** - Drop problematic maximum-token parameters from incoming requests
 - **Docker Support** - Production-ready Docker images with health checks
 - **Minimal Dependencies** - Uses Go plus TOML parsing and a pure-Go SQLite driver; no C compiler is required
 - **Highly Configurable** - Fine-tune logging, timeouts, CORS, database cleanup, and more
@@ -176,6 +177,10 @@ path = "./data/llm_proxy.db"
 max_requests = 100
 cleanup_interval = 5
 
+[request_sanitization]
+max_tokens_policy = "preserve"
+max_tokens_limit = 0
+
 [chat_text_injection]
 enabled = false
 text = "/nothink"
@@ -249,6 +254,34 @@ tool_blacklist = ["web_search", "execute_code", "sensitive_tool"]
 - The first cleanup runs immediately on startup, then repeats at the configured interval
 - Set `max_requests` to `0` or `cleanup_interval` to `0` to disable automatic cleanup
 - All request/response data is permanently deleted when cleaned up
+
+#### Request Sanitization
+- `max_tokens_policy`: How to handle incoming maximum-token parameters (default: `"preserve"`)
+- `max_tokens_limit`: Threshold used when `max_tokens_policy = "drop_above"` (default: `0`)
+
+**Max Tokens Policy:**
+- Applies to OpenAI-compatible `max_tokens` on `/v1/chat/completions`
+- Applies to Ollama-compatible `options.num_predict` on `/api/chat` and `/api/generate`
+- Runs after raw request logging, so `log_raw_requests = true` still shows the original client payload
+- Runs before backend forwarding, so dropped values are omitted from backend requests
+
+**Policy Options:**
+- `"preserve"`: Keep incoming values unchanged
+- `"drop_above"`: Drop the parameter only when it is greater than `max_tokens_limit`
+- `"drop"`: Always drop the incoming maximum-token parameter
+
+**Example: Drop excessive values only**
+```toml
+[request_sanitization]
+max_tokens_policy = "drop_above"
+max_tokens_limit = 8192
+```
+
+**Example: Always let the backend choose**
+```toml
+[request_sanitization]
+max_tokens_policy = "drop"
+```
 
 #### Chat Text Injection
 - `enabled`: Enable text injection (default: `false`)

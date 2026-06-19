@@ -62,6 +62,8 @@ func (h *GenerateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	applyGenerateRequestSanitization(&req, h.config)
+
 	// Log request messages if enabled
 	if h.config.Server.LogMessages {
 		log.Printf("=== Generate Request ===")

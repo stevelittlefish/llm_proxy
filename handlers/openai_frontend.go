@@ -59,6 +59,8 @@ func (h *OpenAIChatCompletionsHandler) ServeHTTP(w http.ResponseWriter, r *http.
 		}
 	}
 
+	applyOpenAIChatRequestSanitization(&req, h.config)
+
 	chatReq := models.ChatRequest{
 		Model:    req.Model,
 		Messages: req.Messages,

@@ -113,6 +113,8 @@ func main() {
 		"EnableCORS":           cfg.Server.EnableCORS,
 		"ToolBlacklist":        cfg.Backend.ToolBlacklist,
 		"PromptCacheEnabled":   cfg.BackendOpenAI.ForcePromptCache,
+		"MaxTokensPolicy":      cfg.RequestSanitization.MaxTokensPolicy,
+		"MaxTokensLimit":       cfg.RequestSanitization.MaxTokensLimit,
 		"TextInjectionEnabled": cfg.ChatTextInjection.Enabled,
 		"TextInjectionText":    cfg.ChatTextInjection.Text,
 		"TextInjectionMode":    cfg.ChatTextInjection.Mode,

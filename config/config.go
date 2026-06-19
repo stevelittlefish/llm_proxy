@@ -8,11 +8,12 @@ import (
 
 // Config represents the application configuration
 type Config struct {
-	Server            ServerConfig            `toml:"server"`
-	Backend           BackendConfig           `toml:"backend"`
-	BackendOpenAI     BackendOpenAIConfig     `toml:"backend_openai"`
-	Database          DatabaseConfig          `toml:"database"`
-	ChatTextInjection ChatTextInjectionConfig `toml:"chat_text_injection"`
+	Server              ServerConfig              `toml:"server"`
+	Backend             BackendConfig             `toml:"backend"`
+	BackendOpenAI       BackendOpenAIConfig       `toml:"backend_openai"`
+	Database            DatabaseConfig            `toml:"database"`
+	RequestSanitization RequestSanitizationConfig `toml:"request_sanitization"`
+	ChatTextInjection   ChatTextInjectionConfig   `toml:"chat_text_injection"`
 }
 
 // ServerConfig holds the server settings
@@ -46,6 +47,12 @@ type BackendOpenAIConfig struct {
 	ForcePromptCache bool `toml:"force_prompt_cache"` // Force prompt caching on all requests
 }
 
+// RequestSanitizationConfig holds settings for removing problematic incoming request parameters.
+type RequestSanitizationConfig struct {
+	MaxTokensPolicy string `toml:"max_tokens_policy"` // "preserve", "drop", or "drop_above"
+	MaxTokensLimit  int    `toml:"max_tokens_limit"`  // Used when max_tokens_policy is "drop_above"
+}
+
 // ChatTextInjectionConfig holds the chat text injection settings
 type ChatTextInjectionConfig struct {
 	Enabled bool   `toml:"enabled"` // Enable text injection
@@ -76,6 +83,15 @@ func Load(path string) (*Config, error) {
 	if config.ChatTextInjection.Mode != "" && config.ChatTextInjection.Mode != "first" && config.ChatTextInjection.Mode != "last" && config.ChatTextInjection.Mode != "system" {
 		return nil, fmt.Errorf("invalid chat_text_injection.mode: %s (must be 'first', 'last', or 'system')", config.ChatTextInjection.Mode)
 	}
+	if config.RequestSanitization.MaxTokensPolicy != "" &&
+		config.RequestSanitization.MaxTokensPolicy != "preserve" &&
+		config.RequestSanitization.MaxTokensPolicy != "drop" &&
+		config.RequestSanitization.MaxTokensPolicy != "drop_above" {
+		return nil, fmt.Errorf("invalid request_sanitization.max_tokens_policy: %s (must be 'preserve', 'drop', or 'drop_above')", config.RequestSanitization.MaxTokensPolicy)
+	}
+	if config.RequestSanitization.MaxTokensLimit < 0 {
+		return nil, fmt.Errorf("invalid request_sanitization.max_tokens_limit: %d (must be 0 or greater)", config.RequestSanitization.MaxTokensLimit)
+	}
 
 	// Set defaults
 	if config.Server.Host == "" {
@@ -98,6 +114,9 @@ func Load(path string) (*Config, error) {
 	}
 	if config.ChatTextInjection.Mode == "" {
 		config.ChatTextInjection.Mode = "last"
+	}
+	if config.RequestSanitization.MaxTokensPolicy == "" {
+		config.RequestSanitization.MaxTokensPolicy = "preserve"
 	}
 
 	return &config, nil

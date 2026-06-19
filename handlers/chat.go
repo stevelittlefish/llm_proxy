@@ -65,6 +65,7 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	originalLastMessage := lastMessageContent(req.Messages)
 	originalMessages := cloneMessages(req.Messages)
 
+	applyChatRequestSanitization(&req, h.config)
 	applyChatFeatures(&req, h.config)
 
 	// Log request messages if enabled

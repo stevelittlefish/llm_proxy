@@ -187,6 +187,12 @@
                     </div>
                 </div>
                 {{end}}
+                {{if ne .MaxTokensPolicy "preserve"}}
+                <div class="info-item" style="grid-column: 1 / -1;">
+                    <div class="info-label">Max Tokens Policy</div>
+                    <div class="info-value text">{{.MaxTokensPolicy}}{{if eq .MaxTokensPolicy "drop_above"}} {{.MaxTokensLimit}}{{end}}</div>
+                </div>
+                {{end}}
                 {{if .TextInjectionEnabled}}
                 <div class="info-item" style="grid-column: 1 / -1;">
                     <div class="info-label">Chat Text Injection ({{.TextInjectionMode}})</div>

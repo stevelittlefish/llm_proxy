@@ -21,6 +21,12 @@ path = "./data/llm_proxy.db"
 max_requests = 100
 cleanup_interval = 5
 
+[request_sanitization]
+# max_tokens_policy can be "preserve", "drop", or "drop_above"
+max_tokens_policy = "preserve"
+# Used only when max_tokens_policy = "drop_above"
+max_tokens_limit = 0
+
 [chat_text_injection]
 enabled = false
 text = "/nothink"
