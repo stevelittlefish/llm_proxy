@@ -2,6 +2,8 @@
 # This uses the pre-built binary from GoReleaser instead of building from source
 FROM debian:bookworm-slim
 
+ARG TARGETPLATFORM
+
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -12,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Copy the pre-built binary from GoReleaser's build context
-COPY llm_proxy .
+COPY $TARGETPLATFORM/llm_proxy .
 
 # Create directories for data and config
 RUN mkdir -p /app/data /app/config

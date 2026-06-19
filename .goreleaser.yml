@@ -77,23 +77,28 @@ changelog:
     - title: 'Other Changes'
       order: 999
 
-dockers:
-  - image_templates:
-      - "ghcr.io/stevelittlefish/llm_proxy:{{ .Tag }}"
-      - "ghcr.io/stevelittlefish/llm_proxy:v{{ .Major }}"
-      - "ghcr.io/stevelittlefish/llm_proxy:v{{ .Major }}.{{ .Minor }}"
-      - "ghcr.io/stevelittlefish/llm_proxy:latest"
+dockers_v2:
+  - id: llm_proxy
     dockerfile: Dockerfile.goreleaser
-    use: buildx
-    build_flag_templates:
-      - "--platform=linux/amd64"
-      - "--label=org.opencontainers.image.created={{ .Date }}"
-      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
-      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
-      - "--label=org.opencontainers.image.version={{ .Version }}"
-      - "--label=org.opencontainers.image.source=https://github.com/stevelittlefish/llm_proxy"
-      - "--label=org.opencontainers.image.description=LLM Proxy - Ollama-compatible API with multiple backend support"
-      - "--label=org.opencontainers.image.licenses=MIT"
+    ids:
+      - llm_proxy
+    images:
+      - "ghcr.io/stevelittlefish/llm_proxy"
+    tags:
+      - "{{ .Tag }}"
+      - "v{{ .Major }}"
+      - "v{{ .Major }}.{{ .Minor }}"
+      - "latest"
+    platforms:
+      - linux/amd64
+    labels:
+      "org.opencontainers.image.created": "{{ .Date }}"
+      "org.opencontainers.image.title": "{{ .ProjectName }}"
+      "org.opencontainers.image.revision": "{{ .FullCommit }}"
+      "org.opencontainers.image.version": "{{ .Version }}"
+      "org.opencontainers.image.source": "https://github.com/stevelittlefish/llm_proxy"
+      "org.opencontainers.image.description": "LLM Proxy - Ollama-compatible API with multiple backend support"
+      "org.opencontainers.image.licenses": "MIT"
 
 release:
   github:
