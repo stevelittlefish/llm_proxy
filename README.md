@@ -7,6 +7,7 @@ The main motivation for creating this was to get the Home Assistant Ollama integ
 ## Features
 
 - **Ollama-Compatible API** - Presents an Ollama API interface, compatible with Home Assistant and other Ollama clients
+- **Basic OpenAI-Compatible API** - Provides `/v1/chat/completions` and `/v1/models` frontend endpoints for simple OpenAI-style clients
 - **Multiple Backend Support** - Connect to OpenAI-compatible APIs (e.g., llama.cpp) or Ollama instances
 - **Streaming Support** - Full support for streaming responses with minimal latency
 - **Request/Response Logging** - All interactions logged to SQLite with timestamps, latency, and error tracking
@@ -14,7 +15,7 @@ The main motivation for creating this was to get the Home Assistant Ollama integ
 - **Text Injection** - Automatically inject text into user messages (disabled by default) for example "/nothink" to disable thinking
 - **Tool Blacklist** - Filter out specific tools from chat requests before forwarding to the backend
 - **Docker Support** - Production-ready Docker images with health checks
-- **Minimal Dependencies** - Only requires Go standard library + SQLite driver
+- **Minimal Dependencies** - Uses Go plus TOML parsing and a pure-Go SQLite driver; no C compiler is required
 - **Highly Configurable** - Fine-tune logging, timeouts, CORS, database cleanup, and more
 
 ## Quick Start with Docker
@@ -91,31 +92,21 @@ This proxy is designed to sit between Home Assistant (or any Ollama client) and 
 
 The easiest way to get started is to download a pre-built binary from the [releases page](https://github.com/stevelittlefish/llm_proxy/releases).
 
-1. Download the archive for your platform:
-   - Linux (x86_64): `llm_proxy_VERSION_linux_amd64.tar.gz`
-   - macOS (Intel): `llm_proxy_VERSION_darwin_amd64.tar.gz`
-   - Windows (x86_64): `llm_proxy_VERSION_windows_amd64.zip`
+1. Download the Linux x86_64 archive: `llm_proxy_VERSION_linux_amd64.tar.gz`
 
-**Note:** Pre-built binaries are currently only available for x86_64/amd64 architectures. ARM64 users (including Apple Silicon Macs, Raspberry Pi 4/5, and ARM-based Linux systems) should [build from source](#build-from-source).
+**Note:** Pre-built binaries are currently only available for Linux x86_64. macOS, Windows, and ARM64 users should [build from source](#build-from-source) or use Docker.
 
 2. Extract the archive:
    ```bash
-   # Linux/macOS
    tar -xzf llm_proxy_VERSION_linux_amd64.tar.gz
    cd llm_proxy_VERSION_linux_amd64
-   
-   # Windows: use your preferred extraction tool
    ```
 
 3. Edit `config.toml` to configure your backend
 
 4. Run the proxy:
    ```bash
-   # Linux/macOS
    ./llm_proxy
-   
-   # Windows
-   llm_proxy.exe
    ```
 
 ### Build from Source
@@ -138,13 +129,19 @@ cp config.toml.example config.toml
 go run .
 ```
 
+Or use the included helper script:
+
+```bash
+./run.sh
+```
+
 #### Build Binary
 
 ```bash
 git clone https://github.com/stevelittlefish/llm_proxy
 cd llm_proxy
 go mod download
-go build -o llm_proxy
+CGO_ENABLED=0 go build -o llm_proxy
 ```
 
 ### Docker Installation
@@ -160,13 +157,14 @@ Create a `config.toml` file based on the provided example:
 host = "0.0.0.0"
 port = 11434
 enable_cors = false
-log_messages = false
+log_messages = true
 log_raw_requests = false
 log_raw_responses = false
+verbose = false
 
 [backend]
 type = "openai"
-endpoint = "http://localhost:8080"
+endpoint = "http://localhost:8008"
 timeout = 300
 tool_blacklist = []
 
@@ -255,11 +253,11 @@ tool_blacklist = ["web_search", "execute_code", "sensitive_tool"]
 #### Chat Text Injection
 - `enabled`: Enable text injection (default: `false`)
 - `text`: The text string to inject (e.g., `"/nothink"`)
-- `mode`: Which user message to inject into - either `"first"` or `"last"` (default: `"last"`)
+- `mode`: Where to inject text - `"first"`, `"last"`, or `"system"` (default: `"last"`)
 
 **Text Injection Behavior:**
 - **Disabled by default** - must be explicitly enabled in config.toml
-- **Only applies to `/api/chat` endpoint** (not `/api/generate`)
+- **Only applies to `/api/chat` endpoint** (not `/api/generate` or `/v1/chat/completions`)
 - When enabled, automatically appends the configured text to the specified user message
 - **Smart injection** - checks if the text already exists and skips injection if present
 - Text is added with a preceding space: `"hello"` becomes `"hello /nothink"`
@@ -277,6 +275,7 @@ mode = "last"
 **Mode Options:**
 - `"first"`: Injects text into the first message with `role == "user"` in the messages array
 - `"last"`: Injects text into the last message with `role == "user"` in the messages array (typically the current user input)
+- `"system"`: Appends text to the existing system message, or creates one at the start if no system message exists
 
 ## Usage
 
@@ -290,6 +289,12 @@ Or use the default config file location:
 
 ```bash
 ./llm_proxy
+```
+
+When running from source, the helper script does the same thing with `go run`:
+
+```bash
+./run.sh
 ```
 
 ### Test with curl
@@ -331,10 +336,22 @@ A small dependency-free terminal chat client is included for quick manual testin
 go run ./cmd/chatclient -config config.toml
 ```
 
+Or use the helper script:
+
+```bash
+./client.sh
+```
+
 By default it connects to the proxy using the Ollama-compatible API. To use the OpenAI-compatible API instead:
 
 ```bash
 go run ./cmd/chatclient -config config.toml --openai
+```
+
+With the helper script:
+
+```bash
+./client.sh --openai
 ```
 
 The client reads the server host and port from the same config file as the proxy. It auto-selects the first model returned by the proxy, or you can choose one explicitly:
@@ -342,6 +359,8 @@ The client reads the server host and port from the same config file as the proxy
 ```bash
 go run ./cmd/chatclient -config config.toml --model llama2
 ```
+
+The client also accepts `--url` if you want to bypass config-based connection discovery.
 
 Inside the client, use `/clear` to reset chat history, `/model NAME` to switch models, and `/quit` to exit.
 
@@ -443,6 +462,8 @@ endpoint = "http://localhost:11435"
 ```
 llm_proxy/
 ├── main.go                 # Entry point and server setup
+├── cmd/
+│   └── chatclient/         # Dependency-free terminal chat client
 ├── config/
 │   └── config.go           # Configuration loading
 ├── backend/
@@ -453,7 +474,9 @@ llm_proxy/
 │   ├── generate.go         # /api/generate handler
 │   ├── chat.go             # /api/chat handler
 │   ├── models.go           # /api/tags and /api/show handlers
+│   ├── openai_frontend.go  # /v1/chat/completions and /v1/models handlers
 │   ├── web.go              # Web UI handlers
+│   ├── static/             # Embedded static assets
 │   └── templates/          # HTML templates for web UI
 │       ├── home.html       # Configuration overview
 │       ├── logs.html       # Request logs list
@@ -464,7 +487,10 @@ llm_proxy/
 │   ├── sqlite.go           # SQLite connection and initialization
 │   └── queries.go          # Database queries
 ├── middleware/
-│   └── cors.go             # CORS middleware
+│   ├── cors.go             # CORS middleware
+│   └── logging.go          # Verbose request logging middleware
+├── run.sh                  # Run the proxy from source
+├── client.sh               # Run the chat client from source
 ├── Dockerfile              # Docker build configuration
 ├── docker-compose.yml      # Docker compose setup
 ├── config.toml.example     # Example configuration
@@ -473,7 +499,7 @@ llm_proxy/
 
 ## Performance
 
-The proxy adds minimal latency (typically <10ms) as it streams responses directly from the backend without buffering. All logging is done asynchronously after the response is sent.
+The proxy adds minimal latency as it streams responses directly from the backend without buffering full responses in memory. Request and response summaries are stored in SQLite after each request completes.
 
 ## Docker Deployment
 
@@ -481,7 +507,7 @@ See [DOCKER.md](DOCKER.md) for detailed Docker and Docker Compose instructions.
 
 ## Releases
 
-This project uses automated builds via GitHub Actions and GoReleaser. When you push a tag starting with `v`, it automatically builds binaries for all supported platforms and creates a GitHub release.
+This project uses automated builds via GitHub Actions and GoReleaser. When you push a tag starting with `v`, it builds the configured release artifacts and creates a GitHub release.
 
 ### Creating a Release
 
@@ -501,10 +527,11 @@ The script will:
 7. Push the tag to GitHub
 
 GitHub Actions will then automatically:
-- Build binaries for Linux, macOS (Intel & ARM), and Windows
-- Create release archives with config files and documentation
-- Generate checksums
-- Create a GitHub release with all artifacts
+1. Build a Linux x86_64 binary
+2. Build and publish Docker images
+3. Create release archives with config files and documentation
+4. Generate checksums
+5. Create a GitHub release with all artifacts
 
 **Manual Release (alternative)**:
 ```bash
@@ -515,7 +542,7 @@ git push origin v1.0.0
 ### Release Artifacts
 
 Each release includes:
-- Pre-built binaries for multiple platforms
+- A pre-built Linux x86_64 binary
 - `config.toml` (ready to edit)
 - Documentation (README.md, LICENCE.md, DOCKER.md)
 - Data directory with README

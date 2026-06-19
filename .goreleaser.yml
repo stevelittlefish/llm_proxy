@@ -14,14 +14,12 @@ builds:
     binary: llm_proxy
     main: .
     env:
-      - CGO_ENABLED=1
+      - CGO_ENABLED=0
     goos:
       - linux
     goarch:
       - amd64
-    # Note: Cross-compilation with CGO (required for SQLite) is not supported
-    # on standard GitHub Actions runners. This build only targets Linux x86_64.
-    # Users on macOS, Windows, or ARM64 should build from source.
+    # The SQLite driver is pure Go, so release builds do not require CGO.
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
@@ -121,7 +119,7 @@ release:
     
     Download the Linux x86_64 archive below.
     
-    **Note:** Due to CGO requirements for SQLite, pre-built binaries are only available for Linux x86_64. 
+    **Note:** Pre-built binaries are currently only available for Linux x86_64.
     Users on macOS, Windows, or ARM64 should use Docker or build from source. See the README for build instructions.
     
     ### Installation
