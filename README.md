@@ -323,6 +323,28 @@ curl -X POST http://localhost:11434/api/chat \
 curl http://localhost:11434/api/tags
 ```
 
+### Chat Client
+
+A small dependency-free terminal chat client is included for quick manual testing:
+
+```bash
+go run ./cmd/chatclient -config config.toml
+```
+
+By default it connects to the proxy using the Ollama-compatible API. To use the OpenAI-compatible API instead:
+
+```bash
+go run ./cmd/chatclient -config config.toml --openai
+```
+
+The client reads the server host and port from the same config file as the proxy. It auto-selects the first model returned by the proxy, or you can choose one explicitly:
+
+```bash
+go run ./cmd/chatclient -config config.toml --model llama2
+```
+
+Inside the client, use `/clear` to reset chat history, `/model NAME` to switch models, and `/quit` to exit.
+
 ### Configure Home Assistant
 
 In Home Assistant, configure the Ollama integration to point to your proxy:
@@ -346,6 +368,13 @@ The proxy implements the following Ollama API endpoints:
 - `POST /api/chat` - Chat completion
 - `GET /api/tags` - List available models
 - `POST /api/show` - Show model information
+
+### OpenAI-Compatible Endpoints
+
+The proxy implements the following basic OpenAI API endpoints:
+
+- `POST /v1/chat/completions` - Chat completion
+- `GET /v1/models` - List available models
 
 ### Web UI Endpoints
 

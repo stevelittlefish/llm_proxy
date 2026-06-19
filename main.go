@@ -99,6 +99,8 @@ func main() {
 	chatHandler := handlers.NewChatHandler(backendInstance, db, cfg)
 	modelsHandler := handlers.NewModelsHandler(backendInstance)
 	showHandler := handlers.NewShowHandler(backendInstance)
+	openAIChatHandler := handlers.NewOpenAIChatCompletionsHandler(backendInstance, db, cfg)
+	openAIModelsHandler := handlers.NewOpenAIModelsHandler(backendInstance)
 
 	// Prepare config data for web UI
 	homeData := map[string]interface{}{
@@ -122,6 +124,8 @@ func main() {
 	mux.Handle("/api/chat", chatHandler)
 	mux.Handle("/api/tags", modelsHandler)
 	mux.Handle("/api/show", showHandler)
+	mux.Handle("/v1/chat/completions", openAIChatHandler)
+	mux.Handle("/v1/models", openAIModelsHandler)
 
 	// Web UI endpoints
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
