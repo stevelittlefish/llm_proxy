@@ -113,13 +113,18 @@ func (h *OpenAIChatCompletionsHandler) streamResponse(w http.ResponseWriter, mod
 	created := time.Now().Unix()
 	var fullResponse string
 	var frontendResp strings.Builder
+	finishReason := "stop"
 
 	for resp := range respChan {
 		if resp.Done {
+			if resp.DoneReason != "" {
+				finishReason = resp.DoneReason
+			}
 			break
 		}
 		content := resp.Message.Content
-		if content == "" {
+		toolCalls := normalizeOpenAIToolCalls(resp.Message.ToolCalls, true)
+		if content == "" && len(toolCalls) == 0 {
 			continue
 		}
 		fullResponse += content
@@ -132,8 +137,9 @@ func (h *OpenAIChatCompletionsHandler) streamResponse(w http.ResponseWriter, mod
 				{
 					Index: 0,
 					Delta: &models.Message{
-						Role:    "assistant",
-						Content: content,
+						Role:      "assistant",
+						Content:   content,
+						ToolCalls: toolCalls,
 					},
 				},
 			},
@@ -158,7 +164,7 @@ func (h *OpenAIChatCompletionsHandler) streamResponse(w http.ResponseWriter, mod
 			{
 				Index:        0,
 				Delta:        &models.Message{},
-				FinishReason: "stop",
+				FinishReason: finishReason,
 			},
 		},
 	}
@@ -185,8 +191,16 @@ func (h *OpenAIChatCompletionsHandler) streamResponse(w http.ResponseWriter, mod
 
 func (h *OpenAIChatCompletionsHandler) writeResponse(w http.ResponseWriter, model string, respChan <-chan models.ChatResponse, startTime time.Time, req models.ChatRequest, frontendReq string, backendMeta *backend.BackendMetadata, originalMessages []models.Message, originalLastMessage string) {
 	var fullResponse string
+	var toolCalls []interface{}
+	finishReason := "stop"
 	for resp := range respChan {
 		fullResponse += resp.Message.Content
+		if len(resp.Message.ToolCalls) > 0 {
+			toolCalls = normalizeOpenAIToolCalls(resp.Message.ToolCalls, false)
+		}
+		if resp.DoneReason != "" {
+			finishReason = resp.DoneReason
+		}
 	}
 
 	response := models.OpenAIChatResponse{
@@ -198,10 +212,11 @@ func (h *OpenAIChatCompletionsHandler) writeResponse(w http.ResponseWriter, mode
 			{
 				Index: 0,
 				Message: &models.Message{
-					Role:    "assistant",
-					Content: fullResponse,
+					Role:      "assistant",
+					Content:   fullResponse,
+					ToolCalls: toolCalls,
 				},
-				FinishReason: "stop",
+				FinishReason: finishReason,
 			},
 		},
 	}
@@ -229,6 +244,64 @@ func writeSSE(w io.Writer, capture *strings.Builder, data string) {
 	line := fmt.Sprintf("data: %s\n\n", data)
 	fmt.Fprint(w, line)
 	capture.WriteString(line)
+}
+
+func normalizeOpenAIToolCalls(toolCalls []interface{}, includeIndex bool) []interface{} {
+	if len(toolCalls) == 0 {
+		return nil
+	}
+
+	normalized := make([]interface{}, len(toolCalls))
+	for i, tc := range toolCalls {
+		tcMap, ok := tc.(map[string]interface{})
+		if !ok {
+			normalized[i] = tc
+			continue
+		}
+
+		out := make(map[string]interface{}, len(tcMap)+2)
+		for k, v := range tcMap {
+			if k != "function" && k != "type" && k != "index" {
+				out[k] = v
+			}
+		}
+		out["type"] = "function"
+		if includeIndex {
+			out["index"] = i
+			if idx, ok := tcMap["index"]; ok {
+				out["index"] = idx
+			}
+		}
+
+		if fnMap, ok := tcMap["function"].(map[string]interface{}); ok {
+			fnOut := make(map[string]interface{}, len(fnMap))
+			for k, v := range fnMap {
+				if k != "arguments" {
+					fnOut[k] = v
+				}
+			}
+
+			args := "{}"
+			if rawArgs, ok := fnMap["arguments"]; ok {
+				switch typedArgs := rawArgs.(type) {
+				case string:
+					args = typedArgs
+				default:
+					if data, err := json.Marshal(typedArgs); err == nil {
+						args = string(data)
+					}
+				}
+			}
+			fnOut["arguments"] = args
+			out["function"] = fnOut
+		} else {
+			out["function"] = tcMap["function"]
+		}
+
+		normalized[i] = out
+	}
+
+	return normalized
 }
 
 func (h *OpenAIChatCompletionsHandler) logRequest(startTime time.Time, model string, stream bool, originalMessages []models.Message, response string, statusCode int, errMsg string, frontendReq string, frontendResp string, backendReq string, backendResp string, backendURL string, originalLastMessage string) {
