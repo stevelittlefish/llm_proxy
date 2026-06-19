@@ -553,3 +553,14 @@ Each release includes:
 I didn't write that much of the code, my good friend Claude did through the Cline plugin in Visual Studio Code.  It cost me $12.78 in tokens and took around half a day.  Not bad! (EDIT: more like $25 now!)
 
 Contributions are welcome! Please feel free to submit issues and pull requests to the repository.
+
+## Note: 2026-06-19
+
+Wow things have moved so quickly with AI!
+
+I built this in Jan 2026 when I hadn't really used proper AI coding tools before.  I was running Cline with local models, and swapped it over to Claude to build this.  At work I was using a little bit of Copilot but that was it.
+
+Now it's June and I don't write code myself at work any more and rely heavily on Claude Code.  I did the latest batch of updates to this project using Codex and it was so quick and easy.
+
+Fingers crossed, in 6 months time I still have a job and my work hasn't been completely automated!
+
