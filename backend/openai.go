@@ -383,29 +383,7 @@ func (o *OpenAIBackend) Chat(ctx context.Context, req models.ChatRequest) (<-cha
 	// Convert messages from Ollama format to OpenAI format (add type field to tool_calls)
 	convertedMessages := convertMessagesToOpenAI(req.Messages)
 
-	// Translate Ollama request to OpenAI chat request
-	openaiReq := models.OpenAIChatRequest{
-		Model:       req.Model,
-		Messages:    convertedMessages,
-		Stream:      req.Stream,
-		Tools:       req.Tools,
-		CachePrompt: o.forcePromptCache,
-	}
-
-	// Map Ollama options to OpenAI parameters
-	if req.Options != nil {
-		if temp, ok := req.Options["temperature"].(float64); ok {
-			openaiReq.Temperature = temp
-		}
-		if maxTokens, ok := req.Options["num_predict"].(float64); ok {
-			openaiReq.MaxTokens = int(maxTokens)
-		}
-		if topP, ok := req.Options["top_p"].(float64); ok {
-			openaiReq.TopP = topP
-		}
-	}
-
-	data, err := json.Marshal(openaiReq)
+	data, err := o.buildOpenAIChatRequest(req, convertedMessages)
 	if err != nil {
 		close(respChan)
 		return respChan, metadata, fmt.Errorf("failed to marshal request: %w", err)
@@ -452,6 +430,75 @@ func (o *OpenAIBackend) Chat(ctx context.Context, req models.ChatRequest) (<-cha
 	return respChan, metadata, nil
 }
 
+func (o *OpenAIBackend) buildOpenAIChatRequest(req models.ChatRequest, convertedMessages []models.Message) ([]byte, error) {
+	if req.OpenAIRaw != nil {
+		raw := cloneRawMessageMap(req.OpenAIRaw)
+		setRawMessage(raw, "model", req.Model)
+		setRawMessage(raw, "messages", convertedMessages)
+		if req.Stream {
+			setRawMessage(raw, "stream", req.Stream)
+		} else if _, ok := raw["stream"]; ok {
+			setRawMessage(raw, "stream", req.Stream)
+		}
+		if len(req.Tools) > 0 {
+			setRawMessage(raw, "tools", req.Tools)
+		} else {
+			delete(raw, "tools")
+		}
+		if req.Options != nil {
+			if maxTokens, ok := req.Options["num_predict"].(float64); ok {
+				setRawMessage(raw, "max_tokens", int(maxTokens))
+			}
+		}
+		if o.forcePromptCache {
+			setRawMessage(raw, "cache_prompt", true)
+		}
+		return json.Marshal(raw)
+	}
+
+	// Translate Ollama request to OpenAI chat request
+	openaiReq := models.OpenAIChatRequest{
+		Model:       req.Model,
+		Messages:    convertedMessages,
+		Stream:      req.Stream,
+		Tools:       req.Tools,
+		CachePrompt: o.forcePromptCache,
+	}
+
+	// Map Ollama options to OpenAI parameters
+	if req.Options != nil {
+		if temp, ok := req.Options["temperature"].(float64); ok {
+			openaiReq.Temperature = temp
+		}
+		if maxTokens, ok := req.Options["num_predict"].(float64); ok {
+			openaiReq.MaxTokens = int(maxTokens)
+		}
+		if topP, ok := req.Options["top_p"].(float64); ok {
+			openaiReq.TopP = topP
+		}
+	}
+
+	return json.Marshal(openaiReq)
+}
+
+func cloneRawMessageMap(raw map[string]json.RawMessage) map[string]json.RawMessage {
+	cloned := make(map[string]json.RawMessage, len(raw))
+	for key, value := range raw {
+		clonedValue := make(json.RawMessage, len(value))
+		copy(clonedValue, value)
+		cloned[key] = clonedValue
+	}
+	return cloned
+}
+
+func setRawMessage(raw map[string]json.RawMessage, key string, value interface{}) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return
+	}
+	raw[key] = data
+}
+
 // handleStreamingChat processes streaming OpenAI chat responses and converts to Ollama format
 func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader, respChan chan<- models.ChatResponse, model string, metadata *BackendMetadata) {
 	scanner := bufio.NewScanner(body)
@@ -461,6 +508,8 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 	startTime := time.Now()
 	tokenCount := 0
 	var rawResponse strings.Builder
+	doneReason := "stop"
+	var finalUsage *models.OpenAIUsage
 
 	// Tool call accumulation state
 	// Map of tool call index -> accumulated data
@@ -469,6 +518,47 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 		Name      string
 		Arguments string
 	})
+	toolCallsSent := false
+	sendToolCalls := func() {
+		if len(toolCallsState) == 0 || toolCallsSent {
+			return
+		}
+		toolCalls := buildToolCallsArray(toolCallsState)
+		respChan <- models.ChatResponse{
+			Model:     model,
+			CreatedAt: time.Now(),
+			Message: models.Message{
+				Role:      "assistant",
+				Content:   "",
+				ToolCalls: toolCalls,
+			},
+			Done: false,
+		}
+		toolCallsSent = true
+	}
+	finalResponse := func() models.ChatResponse {
+		totalDuration := time.Since(startTime).Nanoseconds()
+		promptTokens := 1
+		evalTokens := tokenCount
+		if finalUsage != nil {
+			promptTokens = finalUsage.PromptTokens
+			evalTokens = finalUsage.CompletionTokens
+		}
+		return models.ChatResponse{
+			Model:              model,
+			CreatedAt:          time.Now(),
+			Message:            models.Message{Role: "assistant", Content: ""},
+			Done:               true,
+			DoneReason:         doneReason,
+			TotalDuration:      totalDuration + 1,
+			LoadDuration:       1,
+			PromptEvalCount:    promptTokens,
+			PromptEvalDuration: 1,
+			EvalCount:          evalTokens,
+			EvalDuration:       totalDuration,
+			Usage:              finalUsage,
+		}
+	}
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -481,38 +571,12 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 
 		data := strings.TrimPrefix(line, "data: ")
 		if data == "[DONE]" {
-			// Send accumulated tool calls if any exist
-			if len(toolCallsState) > 0 {
-				toolCalls := buildToolCallsArray(toolCallsState)
-				respChan <- models.ChatResponse{
-					Model:     model,
-					CreatedAt: time.Now(),
-					Message: models.Message{
-						Role:      "assistant",
-						Content:   "",
-						ToolCalls: toolCalls,
-					},
-					Done: false,
-				}
-			}
+			sendToolCalls()
 
 			// Store raw response before sending final message
 			metadata.RawResponse = rawResponse.String()
 			// Send final response with done=true and performance metrics
-			totalDuration := time.Since(startTime).Nanoseconds()
-			respChan <- models.ChatResponse{
-				Model:              model,
-				CreatedAt:          time.Now(),
-				Message:            models.Message{Role: "assistant", Content: ""},
-				Done:               true,
-				DoneReason:         "stop",
-				TotalDuration:      totalDuration + 1,
-				LoadDuration:       1,
-				PromptEvalCount:    1,
-				PromptEvalDuration: 1,
-				EvalCount:          tokenCount,
-				EvalDuration:       totalDuration,
-			}
+			respChan <- finalResponse()
 			return
 		}
 
@@ -520,44 +584,18 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 		if err := json.Unmarshal([]byte(data), &openaiResp); err != nil {
 			continue
 		}
+		if openaiResp.Usage != nil {
+			finalUsage = openaiResp.Usage
+		}
 
 		if len(openaiResp.Choices) > 0 {
 			choice := openaiResp.Choices[0]
 
 			// Check if this is the final chunk with finish_reason
 			if choice.FinishReason != "" && choice.FinishReason != "null" {
-				// Send accumulated tool calls if any exist
-				if len(toolCallsState) > 0 {
-					toolCalls := buildToolCallsArray(toolCallsState)
-					respChan <- models.ChatResponse{
-						Model:     model,
-						CreatedAt: time.Now(),
-						Message: models.Message{
-							Role:      "assistant",
-							Content:   "",
-							ToolCalls: toolCalls,
-						},
-						Done: false,
-					}
-				}
-
-				// Store raw response before sending final message
-				metadata.RawResponse = rawResponse.String()
-				totalDuration := time.Since(startTime).Nanoseconds()
-				respChan <- models.ChatResponse{
-					Model:              model,
-					CreatedAt:          time.Now(),
-					Message:            models.Message{Role: "assistant", Content: ""},
-					Done:               true,
-					DoneReason:         choice.FinishReason,
-					TotalDuration:      totalDuration + 1,
-					LoadDuration:       1,
-					PromptEvalCount:    1,
-					PromptEvalDuration: 1,
-					EvalCount:          tokenCount,
-					EvalDuration:       totalDuration,
-				}
-				return
+				doneReason = choice.FinishReason
+				sendToolCalls()
+				continue
 			}
 
 			if choice.Delta != nil {
@@ -638,20 +676,7 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 		}
 	}
 
-	// Send accumulated tool calls if any exist
-	if len(toolCallsState) > 0 {
-		toolCalls := buildToolCallsArray(toolCallsState)
-		respChan <- models.ChatResponse{
-			Model:     model,
-			CreatedAt: time.Now(),
-			Message: models.Message{
-				Role:      "assistant",
-				Content:   "",
-				ToolCalls: toolCalls,
-			},
-			Done: false,
-		}
-	}
+	sendToolCalls()
 
 	// Check for scanner errors
 	if err := scanner.Err(); err != nil {
@@ -659,21 +684,8 @@ func (o *OpenAIBackend) handleStreamingChat(ctx context.Context, body io.Reader,
 	}
 
 	// Send final done message if not already sent
-	totalDuration := time.Since(startTime).Nanoseconds()
 	metadata.RawResponse = rawResponse.String()
-	respChan <- models.ChatResponse{
-		Model:              model,
-		CreatedAt:          time.Now(),
-		Message:            models.Message{Role: "assistant", Content: ""},
-		Done:               true,
-		DoneReason:         "stop",
-		TotalDuration:      totalDuration + 1,
-		LoadDuration:       1,
-		PromptEvalCount:    1,
-		PromptEvalDuration: 1,
-		EvalCount:          tokenCount,
-		EvalDuration:       totalDuration,
-	}
+	respChan <- finalResponse()
 }
 
 // buildToolCallsArray converts accumulated tool call state into Ollama format
@@ -771,6 +783,7 @@ func (o *OpenAIBackend) handleNonStreamingChat(body io.Reader, respChan chan<- m
 			PromptEvalDuration: 1,
 			EvalCount:          evalTokens,
 			EvalDuration:       totalDuration,
+			Usage:              openaiResp.Usage,
 		}
 	}
 }

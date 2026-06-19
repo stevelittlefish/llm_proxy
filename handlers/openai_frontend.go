@@ -51,6 +51,11 @@ func (h *OpenAIChatCompletionsHandler) ServeHTTP(w http.ResponseWriter, r *http.
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
+	var rawReq map[string]json.RawMessage
+	if err := json.Unmarshal(bodyBytes, &rawReq); err != nil || rawReq == nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
 
 	if h.config.Server.LogRawRequests {
 		reqJSON, err := json.MarshalIndent(req, "", "  ")
@@ -59,13 +64,14 @@ func (h *OpenAIChatCompletionsHandler) ServeHTTP(w http.ResponseWriter, r *http.
 		}
 	}
 
-	applyOpenAIChatRequestSanitization(&req, h.config)
+	applyOpenAIChatRequestSanitization(&req, rawReq, h.config)
 
 	chatReq := models.ChatRequest{
-		Model:    req.Model,
-		Messages: req.Messages,
-		Stream:   req.Stream,
-		Tools:    req.Tools,
+		Model:     req.Model,
+		Messages:  req.Messages,
+		Stream:    req.Stream,
+		Tools:     req.Tools,
+		OpenAIRaw: rawReq,
 	}
 	if req.MaxTokens > 0 {
 		chatReq.Options = map[string]interface{}{
@@ -77,6 +83,7 @@ func (h *OpenAIChatCompletionsHandler) ServeHTTP(w http.ResponseWriter, r *http.
 	originalMessages := cloneMessages(chatReq.Messages)
 
 	applyChatFeatures(&chatReq, h.config)
+	syncOpenAIRawChatRequest(&chatReq)
 
 	if h.config.Server.LogMessages {
 		log.Printf("=== OpenAI Chat Request ===")
@@ -114,12 +121,14 @@ func (h *OpenAIChatCompletionsHandler) streamResponse(w http.ResponseWriter, mod
 	var fullResponse string
 	var frontendResp strings.Builder
 	finishReason := "stop"
+	var usage *models.OpenAIUsage
 
 	for resp := range respChan {
 		if resp.Done {
 			if resp.DoneReason != "" {
 				finishReason = resp.DoneReason
 			}
+			usage = resp.Usage
 			break
 		}
 		content := resp.Message.Content
@@ -172,6 +181,20 @@ func (h *OpenAIChatCompletionsHandler) streamResponse(w http.ResponseWriter, mod
 	if err == nil {
 		writeSSE(w, &frontendResp, string(data))
 	}
+	if usage != nil {
+		usageChunk := models.OpenAIChatResponse{
+			ID:      fmt.Sprintf("chatcmpl-%d", startTime.UnixNano()),
+			Object:  "chat.completion.chunk",
+			Created: created,
+			Model:   model,
+			Choices: []models.OpenAIChatChoice{},
+			Usage:   usage,
+		}
+		data, err := json.Marshal(usageChunk)
+		if err == nil {
+			writeSSE(w, &frontendResp, string(data))
+		}
+	}
 	writeSSE(w, &frontendResp, "[DONE]")
 	if flusher != nil {
 		flusher.Flush()
@@ -193,6 +216,7 @@ func (h *OpenAIChatCompletionsHandler) writeResponse(w http.ResponseWriter, mode
 	var fullResponse string
 	var toolCalls []interface{}
 	finishReason := "stop"
+	var usage *models.OpenAIUsage
 	for resp := range respChan {
 		fullResponse += resp.Message.Content
 		if len(resp.Message.ToolCalls) > 0 {
@@ -200,6 +224,9 @@ func (h *OpenAIChatCompletionsHandler) writeResponse(w http.ResponseWriter, mode
 		}
 		if resp.DoneReason != "" {
 			finishReason = resp.DoneReason
+		}
+		if resp.Usage != nil {
+			usage = resp.Usage
 		}
 	}
 
@@ -219,6 +246,7 @@ func (h *OpenAIChatCompletionsHandler) writeResponse(w http.ResponseWriter, mode
 				FinishReason: finishReason,
 			},
 		},
+		Usage: usage,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -244,6 +272,38 @@ func writeSSE(w io.Writer, capture *strings.Builder, data string) {
 	line := fmt.Sprintf("data: %s\n\n", data)
 	fmt.Fprint(w, line)
 	capture.WriteString(line)
+}
+
+func syncOpenAIRawChatRequest(req *models.ChatRequest) {
+	if req.OpenAIRaw == nil {
+		return
+	}
+
+	setRawJSON(req.OpenAIRaw, "model", req.Model)
+	setRawJSON(req.OpenAIRaw, "messages", req.Messages)
+	if req.Stream {
+		setRawJSON(req.OpenAIRaw, "stream", req.Stream)
+	} else if _, ok := req.OpenAIRaw["stream"]; ok {
+		setRawJSON(req.OpenAIRaw, "stream", req.Stream)
+	}
+	if len(req.Tools) > 0 {
+		setRawJSON(req.OpenAIRaw, "tools", req.Tools)
+	} else {
+		delete(req.OpenAIRaw, "tools")
+	}
+	if req.Options != nil {
+		if maxTokens, ok := req.Options["num_predict"].(float64); ok {
+			setRawJSON(req.OpenAIRaw, "max_tokens", int(maxTokens))
+		}
+	}
+}
+
+func setRawJSON(raw map[string]json.RawMessage, key string, value interface{}) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return
+	}
+	raw[key] = data
 }
 
 func normalizeOpenAIToolCalls(toolCalls []interface{}, includeIndex bool) []interface{} {

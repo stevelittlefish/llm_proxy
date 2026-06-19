@@ -70,6 +70,61 @@ func TestOpenAIBackendChatTranslatesRequestAndNonStreamingResponse(t *testing.T)
 	}
 }
 
+func TestOpenAIBackendChatPreservesRawOpenAIFields(t *testing.T) {
+	var gotReq map[string]json.RawMessage
+	b := NewOpenAIBackend("http://backend.test", 10, true)
+	b.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
+			t.Fatalf("Decode() error = %v", err)
+		}
+		return jsonResponse(`{"choices":[{"message":{"role":"assistant","content":"pong"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":5}}`), nil
+	})
+
+	raw := map[string]json.RawMessage{
+		"model":               json.RawMessage(`"old-model"`),
+		"messages":            json.RawMessage(`[{"role":"user","content":"old"}]`),
+		"stream_options":      json.RawMessage(`{"include_usage":true}`),
+		"response_format":     json.RawMessage(`{"type":"json_object"}`),
+		"tool_choice":         json.RawMessage(`"auto"`),
+		"parallel_tool_calls": json.RawMessage(`false`),
+	}
+
+	respChan, _, err := b.Chat(context.Background(), models.ChatRequest{
+		Model:     "test-model",
+		Messages:  []models.Message{{Role: "user", Content: "ping"}},
+		Stream:    true,
+		OpenAIRaw: raw,
+	})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	for range respChan {
+	}
+
+	var gotModel string
+	if err := json.Unmarshal(gotReq["model"], &gotModel); err != nil {
+		t.Fatalf("model decode error: %v", err)
+	}
+	if gotModel != "test-model" {
+		t.Fatalf("model = %q, want test-model", gotModel)
+	}
+	if string(gotReq["stream_options"]) != `{"include_usage":true}` {
+		t.Fatalf("stream_options = %s, want include_usage passthrough", gotReq["stream_options"])
+	}
+	if string(gotReq["response_format"]) != `{"type":"json_object"}` {
+		t.Fatalf("response_format = %s, want passthrough", gotReq["response_format"])
+	}
+	if string(gotReq["tool_choice"]) != `"auto"` {
+		t.Fatalf("tool_choice = %s, want passthrough", gotReq["tool_choice"])
+	}
+	if string(gotReq["parallel_tool_calls"]) != `false` {
+		t.Fatalf("parallel_tool_calls = %s, want passthrough", gotReq["parallel_tool_calls"])
+	}
+	if string(gotReq["cache_prompt"]) != `true` {
+		t.Fatalf("cache_prompt = %s, want forced true", gotReq["cache_prompt"])
+	}
+}
+
 func TestOpenAIBackendStreamingChatAccumulatesToolCalls(t *testing.T) {
 	b := NewOpenAIBackend("http://backend.test", 10, false)
 	b.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -116,6 +171,47 @@ func TestOpenAIBackendStreamingChatAccumulatesToolCalls(t *testing.T) {
 	}
 	if !strings.Contains(meta.RawResponse, "[DONE]") {
 		t.Fatalf("RawResponse = %q, want captured SSE stream", meta.RawResponse)
+	}
+}
+
+func TestOpenAIBackendStreamingChatCapturesUsageAfterFinish(t *testing.T) {
+	b := NewOpenAIBackend("http://backend.test", 10, false)
+	b.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		body := strings.Join([]string{
+			`data: {"choices":[{"delta":{"content":"pong"},"finish_reason":null}]}`,
+			`data: {"choices":[{"delta":{},"finish_reason":"stop"}]}`,
+			`data: {"choices":[],"usage":{"prompt_tokens":7,"completion_tokens":11,"total_tokens":18}}`,
+			`data: [DONE]`,
+			"",
+		}, "\n")
+		return textResponse("text/event-stream", body), nil
+	})
+
+	respChan, _, err := b.Chat(context.Background(), models.ChatRequest{
+		Model:    "test-model",
+		Stream:   true,
+		Messages: []models.Message{{Role: "user", Content: "ping"}},
+	})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	var responses []models.ChatResponse
+	for resp := range respChan {
+		responses = append(responses, resp)
+	}
+	if len(responses) != 2 {
+		t.Fatalf("len(responses) = %d, want content and done responses: %#v", len(responses), responses)
+	}
+	final := responses[1]
+	if !final.Done {
+		t.Fatalf("final response Done = false: %#v", final)
+	}
+	if final.PromptEvalCount != 7 || final.EvalCount != 11 {
+		t.Fatalf("token counts = (%d, %d), want (7, 11)", final.PromptEvalCount, final.EvalCount)
+	}
+	if final.Usage == nil || final.Usage.TotalTokens != 18 {
+		t.Fatalf("usage = %#v, want total_tokens 18", final.Usage)
 	}
 }
 

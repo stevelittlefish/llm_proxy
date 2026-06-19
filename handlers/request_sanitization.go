@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"log"
 
 	"llm_proxy/config"
@@ -13,12 +14,13 @@ const (
 	maxTokensPolicyDropAbove = "drop_above"
 )
 
-func applyOpenAIChatRequestSanitization(req *models.OpenAIChatRequest, cfg *config.Config) {
+func applyOpenAIChatRequestSanitization(req *models.OpenAIChatRequest, raw map[string]json.RawMessage, cfg *config.Config) {
 	if shouldDropMaxTokens(req.MaxTokens, cfg) {
 		if cfg.Server.Verbose {
 			log.Printf("Dropping max_tokens: %d", req.MaxTokens)
 		}
 		req.MaxTokens = 0
+		delete(raw, "max_tokens")
 	}
 }
 

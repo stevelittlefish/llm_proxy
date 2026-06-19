@@ -127,6 +127,43 @@ func (b toolCallChatBackend) ListModels(context.Context) (models.ModelsResponse,
 	return models.ModelsResponse{}, nil
 }
 
+type usageChatBackend struct{}
+
+func (usageChatBackend) Generate(context.Context, models.GenerateRequest) (<-chan models.GenerateResponse, *backend.BackendMetadata, error) {
+	ch := make(chan models.GenerateResponse)
+	close(ch)
+	return ch, &backend.BackendMetadata{URL: "http://backend/api/generate"}, nil
+}
+
+func (usageChatBackend) Chat(ctx context.Context, req models.ChatRequest) (<-chan models.ChatResponse, *backend.BackendMetadata, error) {
+	ch := make(chan models.ChatResponse, 2)
+	ch <- models.ChatResponse{
+		Model:     req.Model,
+		CreatedAt: time.Now(),
+		Message: models.Message{
+			Role:    "assistant",
+			Content: "hello",
+		},
+	}
+	ch <- models.ChatResponse{
+		Model:      req.Model,
+		CreatedAt:  time.Now(),
+		Done:       true,
+		DoneReason: "stop",
+		Usage: &models.OpenAIUsage{
+			PromptTokens:     7,
+			CompletionTokens: 11,
+			TotalTokens:      18,
+		},
+	}
+	close(ch)
+	return ch, &backend.BackendMetadata{URL: "http://backend/api/chat"}, nil
+}
+
+func (usageChatBackend) ListModels(context.Context) (models.ModelsResponse, error) {
+	return models.ModelsResponse{}, nil
+}
+
 func TestOpenAIChatCompletionsHandler(t *testing.T) {
 	db, err := database.New(filepath.Join(t.TempDir(), "llm_proxy.db"))
 	if err != nil {
@@ -274,6 +311,37 @@ func TestOpenAIChatCompletionsHandlerStreamingOmitsEmptyUsage(t *testing.T) {
 	}
 }
 
+func TestOpenAIChatCompletionsHandlerStreamingIncludesUsageWhenPresent(t *testing.T) {
+	db, err := database.New(filepath.Join(t.TempDir(), "llm_proxy.db"))
+	if err != nil {
+		t.Fatalf("database.New() error = %v", err)
+	}
+	defer db.Close()
+
+	cfg := &config.Config{}
+	handler := NewOpenAIChatCompletionsHandler(usageChatBackend{}, db, cfg)
+
+	body := `{"model":"test-model","stream":true,"messages":[{"role":"user","content":"hello"}],"stream_options":{"include_usage":true}}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	bodyText := rec.Body.String()
+	if !strings.Contains(bodyText, `"usage":{"prompt_tokens":7,"completion_tokens":11,"total_tokens":18}`) {
+		t.Fatalf("stream response missing usage: %s", bodyText)
+	}
+	if !strings.Contains(bodyText, `"choices":[]`) {
+		t.Fatalf("stream response missing usage-only chunk: %s", bodyText)
+	}
+	if !strings.Contains(bodyText, `data: [DONE]`) {
+		t.Fatalf("stream response missing [DONE]: %s", bodyText)
+	}
+}
+
 func assertOpenAIToolCall(t *testing.T, toolCalls []interface{}, wantIndex bool) {
 	t.Helper()
 	if len(toolCalls) != 1 {
@@ -330,6 +398,78 @@ func TestOpenAIChatCompletionsHandlerPreservesMaxTokens(t *testing.T) {
 	}
 	if got != 4 {
 		t.Fatalf("num_predict = %v, want 4", got)
+	}
+}
+
+func TestOpenAIChatCompletionsHandlerCarriesRawOpenAIFields(t *testing.T) {
+	db, err := database.New(filepath.Join(t.TempDir(), "llm_proxy.db"))
+	if err != nil {
+		t.Fatalf("database.New() error = %v", err)
+	}
+	defer db.Close()
+
+	cfg := &config.Config{
+		Backend: config.BackendConfig{
+			ToolBlacklist: []string{"terminal"},
+		},
+		RequestSanitization: config.RequestSanitizationConfig{
+			MaxTokensPolicy: "drop",
+		},
+	}
+	backend := &recordingChatBackend{}
+	handler := NewOpenAIChatCompletionsHandler(backend, db, cfg)
+
+	body := `{
+		"model":"test-model",
+		"messages":[{"role":"user","content":"hello"}],
+		"max_tokens":4,
+		"stream_options":{"include_usage":true},
+		"response_format":{"type":"json_object"},
+		"tool_choice":"auto",
+		"parallel_tool_calls":false,
+		"tools":[
+			{"type":"function","function":{"name":"terminal","parameters":{}}},
+			{"type":"function","function":{"name":"lookup","parameters":{}}}
+		]
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	raw := backend.lastReq.OpenAIRaw
+	if raw == nil {
+		t.Fatal("OpenAIRaw = nil, want preserved raw request")
+	}
+	if string(raw["stream_options"]) != `{"include_usage":true}` {
+		t.Fatalf("stream_options = %s, want passthrough", raw["stream_options"])
+	}
+	if string(raw["response_format"]) != `{"type":"json_object"}` {
+		t.Fatalf("response_format = %s, want passthrough", raw["response_format"])
+	}
+	if string(raw["tool_choice"]) != `"auto"` {
+		t.Fatalf("tool_choice = %s, want passthrough", raw["tool_choice"])
+	}
+	if string(raw["parallel_tool_calls"]) != `false` {
+		t.Fatalf("parallel_tool_calls = %s, want passthrough", raw["parallel_tool_calls"])
+	}
+	if _, ok := raw["max_tokens"]; ok {
+		t.Fatalf("max_tokens preserved after drop policy: %s", raw["max_tokens"])
+	}
+
+	var tools []map[string]interface{}
+	if err := json.Unmarshal(raw["tools"], &tools); err != nil {
+		t.Fatalf("tools decode error: %v", err)
+	}
+	if len(tools) != 1 {
+		t.Fatalf("len(tools) = %d, want only non-blacklisted tool", len(tools))
+	}
+	fn := tools[0]["function"].(map[string]interface{})
+	if fn["name"] != "lookup" {
+		t.Fatalf("tool name = %#v, want lookup", fn["name"])
 	}
 }
 

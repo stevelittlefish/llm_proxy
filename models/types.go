@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // Ollama API types
 
@@ -36,14 +39,15 @@ type GenerateResponse struct {
 
 // ChatRequest represents an Ollama chat request
 type ChatRequest struct {
-	Model     string                 `json:"model"`
-	Messages  []Message              `json:"messages"`
-	Stream    bool                   `json:"stream,omitempty"`
-	Options   map[string]interface{} `json:"options,omitempty"`
-	Format    string                 `json:"format,omitempty"`
-	Template  string                 `json:"template,omitempty"`
-	Tools     []interface{}          `json:"tools,omitempty"`
-	KeepAlive string                 `json:"keep_alive,omitempty"`
+	Model     string                     `json:"model"`
+	Messages  []Message                  `json:"messages"`
+	Stream    bool                       `json:"stream,omitempty"`
+	Options   map[string]interface{}     `json:"options,omitempty"`
+	Format    string                     `json:"format,omitempty"`
+	Template  string                     `json:"template,omitempty"`
+	Tools     []interface{}              `json:"tools,omitempty"`
+	KeepAlive string                     `json:"keep_alive,omitempty"`
+	OpenAIRaw map[string]json.RawMessage `json:"-"`
 }
 
 // Message represents a chat message
@@ -57,17 +61,18 @@ type Message struct {
 
 // ChatResponse represents an Ollama chat response
 type ChatResponse struct {
-	Model              string    `json:"model"`
-	CreatedAt          time.Time `json:"created_at"`
-	Message            Message   `json:"message"`
-	Done               bool      `json:"done"`
-	DoneReason         string    `json:"done_reason,omitempty"`
-	TotalDuration      int64     `json:"total_duration,omitempty"`
-	LoadDuration       int64     `json:"load_duration,omitempty"`
-	PromptEvalCount    int       `json:"prompt_eval_count,omitempty"`
-	PromptEvalDuration int64     `json:"prompt_eval_duration,omitempty"`
-	EvalCount          int       `json:"eval_count,omitempty"`
-	EvalDuration       int64     `json:"eval_duration,omitempty"`
+	Model              string       `json:"model"`
+	CreatedAt          time.Time    `json:"created_at"`
+	Message            Message      `json:"message"`
+	Done               bool         `json:"done"`
+	DoneReason         string       `json:"done_reason,omitempty"`
+	TotalDuration      int64        `json:"total_duration,omitempty"`
+	LoadDuration       int64        `json:"load_duration,omitempty"`
+	PromptEvalCount    int          `json:"prompt_eval_count,omitempty"`
+	PromptEvalDuration int64        `json:"prompt_eval_duration,omitempty"`
+	EvalCount          int          `json:"eval_count,omitempty"`
+	EvalDuration       int64        `json:"eval_duration,omitempty"`
+	Usage              *OpenAIUsage `json:"-"`
 }
 
 // ModelsResponse represents the response for listing models
