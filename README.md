@@ -185,6 +185,9 @@ max_tokens_limit = 0
 enabled = false
 text = "/nothink"
 mode = "last"
+
+[stream_override]
+mode = "passthrough"
 ```
 
 ### Configuration Options
@@ -309,6 +312,25 @@ mode = "last"
 - `"first"`: Injects text into the first message with `role == "user"` in the messages array
 - `"last"`: Injects text into the last message with `role == "user"` in the messages array (typically the current user input)
 - `"system"`: Appends text to the existing system message, or creates one at the start if no system message exists
+
+#### Stream Override
+- `mode`: Force the streaming behavior of the proxy's call to the backend, ignoring what the client asked for (default: `"passthrough"`)
+
+**Mode Options:**
+- `"passthrough"`: Ask the backend for whatever the client requested (default, no override)
+- `"always"`: Always ask the backend to stream, even if the client asked for a single non-streamed response
+- `"never"`: Always ask the backend for a single non-streamed response, even if the client asked to stream
+
+**Behavior:**
+- Applies to `/api/chat`, `/api/generate`, and `/v1/chat/completions`
+- Only changes how the proxy talks to the backend. The response sent back to the client always matches what the client originally requested: a client that asked to stream still gets an SSE/NDJSON stream (the proxy reshapes one backend response into a single chunk if needed), and a client that asked for a single response still gets exactly one JSON object (the proxy aggregates backend chunks into one if needed)
+- Useful when the backend behaves better one way (e.g. avoiding timeouts on long generations by always streaming, or avoiding a backend's broken streaming mode) regardless of what clients request
+
+**Example Configuration:**
+```toml
+[stream_override]
+mode = "always"
+```
 
 ## Usage
 

@@ -440,6 +440,12 @@ func (o *OpenAIBackend) buildOpenAIChatRequest(req models.ChatRequest, converted
 		} else if _, ok := raw["stream"]; ok {
 			setRawMessage(raw, "stream", req.Stream)
 		}
+		if !req.Stream {
+			// stream_options is only valid when stream=true; carrying it over
+			// after forcing stream off (e.g. via stream_override) gets the
+			// request rejected by OpenAI-compatible backends.
+			delete(raw, "stream_options")
+		}
 		if len(req.Tools) > 0 {
 			setRawMessage(raw, "tools", req.Tools)
 		} else {

@@ -47,6 +47,25 @@ GOCACHE=/tmp/llm_proxy_go_build CGO_ENABLED=0 go test ./...
 - `cmd/chatclient/` contains the stdlib-only terminal chat client.
 - `run.sh` and `client.sh` are convenience wrappers for local manual testing.
 
+## Streaming Architecture
+
+- `backend.Backend.Chat`/`Generate` always return a `<-chan` of response chunks terminated by one item with `Done: true`, regardless of whether the upstream backend itself streamed. Frontend handlers (`handlers/chat.go`, `handlers/generate.go`, `handlers/openai_frontend.go`) just range over the channel.
+- The *backend-facing* stream flag (does the proxy ask the upstream API for SSE) and the *client-facing* response format (does the proxy send the client SSE/NDJSON chunks or one JSON blob) are deliberately decoupled — `stream_override` only ever changes the former. **The client must always get back the format it originally requested**, regardless of `stream_override.mode`, because clients are coded against the format they asked for (e.g. an OpenAI SDK client that sent `stream:true` will error like "Stream ended without finish_reason" if it gets a plain JSON body instead).
+- All three handlers capture `clientWantsStream := req.Stream` *before* calling `resolveStream`, then use `clientWantsStream` (not the overridden value) to decide what to send the client, while the overridden value goes to `backend.Chat`/`Generate`:
+  - `handlers/openai_frontend.go`: `clientWantsStream` picks `streamResponse` (SSE) vs `writeResponse` (single JSON); both already aggregate/forward whatever the channel yields, so they work no matter how many chunks the backend actually produced.
+  - `handlers/chat.go` / `handlers/generate.go`: the response-writing loop always builds a `combined` aggregate alongside writing, then only flushes per-chunk if `clientWantsStream`; if not, it sends the aggregate once at the end. This reshapes N backend chunks into 1 client response, or 1 backend chunk into a valid 1-chunk client stream, as needed.
+- When adding new stream-related behavior, never let `stream_override` change `clientWantsStream` — only the value passed to the backend call.
+
+## Adding a Config Option
+
+Follow the existing pattern (see `RequestSanitizationConfig`, `StreamOverrideConfig` in `config/config.go`):
+1. Add the field to a `...Config` struct with a `toml:"..."` tag.
+2. If it's an enum-like string, validate allowed values in `Load()` and set its default there too (empty string from an unset TOML key is not validated against the enum).
+3. Mirror the new section/key in `config.toml.example` with a comment listing allowed values.
+4. Document it in `README.md` under "Configuration Options" (`config.toml` itself is gitignored — local/example only).
+5. Add `config_test.go` cases for: explicit value loads, default-when-omitted, and rejection of an invalid value.
+6. If it changes request handling, add a handler-level parity test across the three endpoints (`openai_chat`, `ollama_chat`, `ollama_generate`) using a spy backend — see `handlers/request_sanitization_test.go` or `handlers/stream_override_test.go` for the pattern.
+
 ## Development Notes
 
 - Keep the chat client dependency-free. It should remain trivial to run with `go run ./cmd/chatclient`.
@@ -69,6 +88,7 @@ GOCACHE=/tmp/llm_proxy_go_build CGO_ENABLED=0 go test ./...
   - `database/sqlite_test.go` for SQLite round trips.
   - `handlers/openai_frontend_test.go` for OpenAI-compatible frontend behavior.
   - `handlers/llmlog_test.go` for log formatting.
+  - `handlers/request_sanitization_test.go` and `handlers/stream_override_test.go` for the spy-backend, cross-endpoint parity test pattern used for request-mutation features.
 
 ## Documentation Guidance
 

@@ -67,6 +67,8 @@ func (h *GenerateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	applyGenerateRequestSanitization(&req, h.config)
+	clientWantsStream := req.Stream
+	req.Stream = resolveStream(clientWantsStream, h.config)
 
 	// Log request messages if enabled
 	if h.config.Server.LogMessages {
@@ -83,7 +85,7 @@ func (h *GenerateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	respChan, backendMeta, err := h.backend.Generate(r.Context(), req)
 	if err != nil {
 		log.Printf("Backend error: %v", err)
-		h.logRequest(startTime, req, "", http.StatusInternalServerError, err.Error(), string(frontendReqJSON), "", backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL)
+		h.logRequest(startTime, req, clientWantsStream, "", http.StatusInternalServerError, err.Error(), string(frontendReqJSON), "", backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -100,6 +102,7 @@ func (h *GenerateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Stream responses
 	var fullResponse strings.Builder
 	var responses []models.GenerateResponse
+	var combined models.GenerateResponse
 	encoder := json.NewEncoder(w)
 
 	for resp := range respChan {
@@ -108,17 +111,49 @@ func (h *GenerateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Always store responses for database logging
 		responses = append(responses, resp)
 
-		if err := encoder.Encode(resp); err != nil {
-			log.Printf("Error encoding response: %v", err)
-			break
+		// Accumulate into a single response in case the client needs the
+		// non-streamed shape even though the backend call streamed (or
+		// vice versa) due to stream_override.
+		combined.Model = resp.Model
+		combined.CreatedAt = resp.CreatedAt
+		combined.Response += resp.Response
+		if len(resp.Context) > 0 {
+			combined.Context = resp.Context
+		}
+		if resp.Done {
+			combined.Done = true
+			combined.DoneReason = resp.DoneReason
+			combined.TotalDuration = resp.TotalDuration
+			combined.LoadDuration = resp.LoadDuration
+			combined.PromptEvalCount = resp.PromptEvalCount
+			combined.PromptEvalDuration = resp.PromptEvalDuration
+			combined.EvalCount = resp.EvalCount
+			combined.EvalDuration = resp.EvalDuration
 		}
 
-		if f, ok := w.(http.Flusher); ok {
-			f.Flush()
+		// Only forward chunks as they arrive if the client actually asked
+		// to stream; otherwise wait and send the aggregated response once.
+		if clientWantsStream {
+			if err := encoder.Encode(resp); err != nil {
+				log.Printf("Error encoding response: %v", err)
+				break
+			}
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
 		}
 
 		if resp.Done {
 			break
+		}
+	}
+
+	if !clientWantsStream {
+		if err := encoder.Encode(combined); err != nil {
+			log.Printf("Error encoding response: %v", err)
+		}
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
 		}
 	}
 
@@ -137,24 +172,29 @@ func (h *GenerateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Capture frontend response as newline-delimited JSON (matching actual streamed format)
+	// Capture frontend response as newline-delimited JSON (matching what was
+	// actually written to the client: per-chunk if streamed, one object otherwise)
 	var frontendRespBuilder strings.Builder
-	for i, resp := range responses {
-		respJSON, err := json.Marshal(resp)
-		if err == nil {
-			frontendRespBuilder.Write(respJSON)
-			if i < len(responses)-1 {
-				frontendRespBuilder.WriteString("\n")
+	if clientWantsStream {
+		for i, resp := range responses {
+			respJSON, err := json.Marshal(resp)
+			if err == nil {
+				frontendRespBuilder.Write(respJSON)
+				if i < len(responses)-1 {
+					frontendRespBuilder.WriteString("\n")
+				}
 			}
 		}
+	} else if respJSON, err := json.Marshal(combined); err == nil {
+		frontendRespBuilder.Write(respJSON)
 	}
 
 	// Log the request/response
-	h.logRequest(startTime, req, fullResponse.String(), http.StatusOK, "", string(frontendReqJSON), frontendRespBuilder.String(), backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL)
+	h.logRequest(startTime, req, clientWantsStream, fullResponse.String(), http.StatusOK, "", string(frontendReqJSON), frontendRespBuilder.String(), backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL)
 }
 
 // logRequest logs the request and response to the database
-func (h *GenerateHandler) logRequest(startTime time.Time, req models.GenerateRequest, response string, statusCode int, errMsg string, frontendReq string, frontendResp string, backendReq string, backendResp string, backendURL string) {
+func (h *GenerateHandler) logRequest(startTime time.Time, req models.GenerateRequest, stream bool, response string, statusCode int, errMsg string, frontendReq string, frontendResp string, backendReq string, backendResp string, backendURL string) {
 	latency := time.Since(startTime).Milliseconds()
 
 	// For generate endpoint, the prompt is the last message
@@ -172,7 +212,7 @@ func (h *GenerateHandler) logRequest(startTime time.Time, req models.GenerateReq
 		Response:         response,
 		StatusCode:       statusCode,
 		LatencyMs:        latency,
-		Stream:           req.Stream,
+		Stream:           stream,
 		BackendType:      h.config.Backend.Type,
 		Error:            errMsg,
 		FrontendURL:      fmt.Sprintf("http://%s:%d/api/generate", h.config.Server.Host, h.config.Server.Port),

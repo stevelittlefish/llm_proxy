@@ -71,6 +71,8 @@ func (h *OpenAIChatCompletionsHandler) ServeHTTP(w http.ResponseWriter, r *http.
 	}
 
 	applyOpenAIChatRequestSanitization(&req, rawReq, h.config)
+	clientWantsStream := req.Stream
+	req.Stream = resolveStream(clientWantsStream, h.config)
 
 	chatReq := models.ChatRequest{
 		Model:     req.Model,
@@ -104,12 +106,12 @@ func (h *OpenAIChatCompletionsHandler) ServeHTTP(w http.ResponseWriter, r *http.
 	respChan, backendMeta, err := h.backend.Chat(r.Context(), chatReq)
 	if err != nil {
 		log.Printf("Backend error: %v", err)
-		h.logRequest(startTime, chatReq.Model, chatReq.Stream, originalMessages, "", http.StatusInternalServerError, err.Error(), string(bodyBytes), "", backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL, originalLastMessage)
+		h.logRequest(startTime, chatReq.Model, clientWantsStream, originalMessages, "", http.StatusInternalServerError, err.Error(), string(bodyBytes), "", backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL, originalLastMessage)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	if req.Stream {
+	if clientWantsStream {
 		h.streamResponse(w, req.Model, respChan, startTime, chatReq, string(bodyBytes), backendMeta, originalMessages, originalLastMessage)
 		return
 	}
@@ -117,6 +119,10 @@ func (h *OpenAIChatCompletionsHandler) ServeHTTP(w http.ResponseWriter, r *http.
 	h.writeResponse(w, req.Model, respChan, startTime, chatReq, string(bodyBytes), backendMeta, originalMessages, originalLastMessage)
 }
 
+// streamResponse writes the response to the client as an SSE stream. It is
+// driven entirely by what arrives on respChan, so it works whether or not
+// the backend call itself streamed (stream_override can force the backend
+// call to be non-streaming while the client still gets a stream).
 func (h *OpenAIChatCompletionsHandler) streamResponse(w http.ResponseWriter, model string, respChan <-chan models.ChatResponse, startTime time.Time, req models.ChatRequest, frontendReq string, backendMeta *backend.BackendMetadata, originalMessages []models.Message, originalLastMessage string) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -130,43 +136,46 @@ func (h *OpenAIChatCompletionsHandler) streamResponse(w http.ResponseWriter, mod
 	var usage *models.OpenAIUsage
 
 	for resp := range respChan {
+		// A non-streaming backend call (e.g. forced by stream_override)
+		// delivers the full content and Done:true in the same chunk, so
+		// content must be flushed before checking Done, not skipped by it.
+		content := resp.Message.Content
+		toolCalls := normalizeOpenAIToolCalls(resp.Message.ToolCalls, true)
+		if content != "" || len(toolCalls) > 0 {
+			fullResponse += content
+			chunk := models.OpenAIChatResponse{
+				ID:      fmt.Sprintf("chatcmpl-%d", startTime.UnixNano()),
+				Object:  "chat.completion.chunk",
+				Created: created,
+				Model:   model,
+				Choices: []models.OpenAIChatChoice{
+					{
+						Index: 0,
+						Delta: &models.Message{
+							Role:      "assistant",
+							Content:   content,
+							ToolCalls: toolCalls,
+						},
+					},
+				},
+			}
+			data, err := json.Marshal(chunk)
+			if err != nil {
+				log.Printf("Failed to marshal OpenAI stream chunk: %v", err)
+			} else {
+				writeSSE(w, &frontendResp, string(data))
+				if flusher != nil {
+					flusher.Flush()
+				}
+			}
+		}
+
 		if resp.Done {
 			if resp.DoneReason != "" {
 				finishReason = resp.DoneReason
 			}
 			usage = resp.Usage
 			break
-		}
-		content := resp.Message.Content
-		toolCalls := normalizeOpenAIToolCalls(resp.Message.ToolCalls, true)
-		if content == "" && len(toolCalls) == 0 {
-			continue
-		}
-		fullResponse += content
-		chunk := models.OpenAIChatResponse{
-			ID:      fmt.Sprintf("chatcmpl-%d", startTime.UnixNano()),
-			Object:  "chat.completion.chunk",
-			Created: created,
-			Model:   model,
-			Choices: []models.OpenAIChatChoice{
-				{
-					Index: 0,
-					Delta: &models.Message{
-						Role:      "assistant",
-						Content:   content,
-						ToolCalls: toolCalls,
-					},
-				},
-			},
-		}
-		data, err := json.Marshal(chunk)
-		if err != nil {
-			log.Printf("Failed to marshal OpenAI stream chunk: %v", err)
-			continue
-		}
-		writeSSE(w, &frontendResp, string(data))
-		if flusher != nil {
-			flusher.Flush()
 		}
 	}
 
@@ -215,9 +224,13 @@ func (h *OpenAIChatCompletionsHandler) streamResponse(w http.ResponseWriter, mod
 		log.Printf("=== Raw OpenAI Chat Response ===\n%s\n================================", frontendResp.String())
 	}
 
-	h.logRequest(startTime, req.Model, req.Stream, originalMessages, fullResponse, http.StatusOK, "", frontendReq, strings.TrimRight(frontendResp.String(), "\n"), backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL, originalLastMessage)
+	h.logRequest(startTime, req.Model, true, originalMessages, fullResponse, http.StatusOK, "", frontendReq, strings.TrimRight(frontendResp.String(), "\n"), backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL, originalLastMessage)
 }
 
+// writeResponse aggregates whatever arrives on respChan into a single JSON
+// response. It works whether or not the backend call itself streamed
+// (stream_override can force the backend call to stream while the client
+// still gets one combined response).
 func (h *OpenAIChatCompletionsHandler) writeResponse(w http.ResponseWriter, model string, respChan <-chan models.ChatResponse, startTime time.Time, req models.ChatRequest, frontendReq string, backendMeta *backend.BackendMetadata, originalMessages []models.Message, originalLastMessage string) {
 	var fullResponse string
 	var toolCalls []interface{}
@@ -271,7 +284,7 @@ func (h *OpenAIChatCompletionsHandler) writeResponse(w http.ResponseWriter, mode
 		log.Printf("=== Raw OpenAI Chat Response ===\n%s\n================================", frontendResp.String())
 	}
 
-	h.logRequest(startTime, req.Model, req.Stream, originalMessages, fullResponse, http.StatusOK, "", frontendReq, strings.TrimRight(frontendResp.String(), "\n"), backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL, originalLastMessage)
+	h.logRequest(startTime, req.Model, false, originalMessages, fullResponse, http.StatusOK, "", frontendReq, strings.TrimRight(frontendResp.String(), "\n"), backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL, originalLastMessage)
 }
 
 func writeSSE(w io.Writer, capture *strings.Builder, data string) {
@@ -291,6 +304,12 @@ func syncOpenAIRawChatRequest(req *models.ChatRequest) {
 		setRawJSON(req.OpenAIRaw, "stream", req.Stream)
 	} else if _, ok := req.OpenAIRaw["stream"]; ok {
 		setRawJSON(req.OpenAIRaw, "stream", req.Stream)
+	}
+	if !req.Stream {
+		// stream_options is only valid when stream=true; carrying it over
+		// after forcing stream off (e.g. via stream_override) gets the
+		// request rejected by OpenAI-compatible backends.
+		delete(req.OpenAIRaw, "stream_options")
 	}
 	if len(req.Tools) > 0 {
 		setRawJSON(req.OpenAIRaw, "tools", req.Tools)

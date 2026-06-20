@@ -423,6 +423,7 @@ func TestOpenAIChatCompletionsHandlerCarriesRawOpenAIFields(t *testing.T) {
 		"model":"test-model",
 		"messages":[{"role":"user","content":"hello"}],
 		"max_tokens":4,
+		"stream":true,
 		"stream_options":{"include_usage":true},
 		"response_format":{"type":"json_object"},
 		"tool_choice":"auto",

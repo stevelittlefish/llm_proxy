@@ -32,3 +32,12 @@ enabled = false
 text = "/nothink"
 # mode can be "first", "last" or "system"
 mode = "last"
+
+[stream_override]
+# Controls how the proxy talks to the backend, not what clients receive
+# (clients always get back the format they requested).
+# mode can be "passthrough", "always", or "never"
+# "passthrough" asks the backend for whatever the client requested
+# "always" always asks the backend to stream
+# "never" always asks the backend for a single non-streamed response
+mode = "passthrough"

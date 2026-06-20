@@ -101,6 +101,60 @@ mode = "middle"
 	}
 }
 
+func TestLoadStreamOverrideConfig(t *testing.T) {
+	path := writeTestConfig(t, `
+[backend]
+type = "openai"
+endpoint = "http://localhost:8008"
+
+[stream_override]
+mode = "always"
+`)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.StreamOverride.Mode != "always" {
+		t.Fatalf("StreamOverride.Mode = %q, want always", cfg.StreamOverride.Mode)
+	}
+}
+
+func TestLoadDefaultsStreamOverrideMode(t *testing.T) {
+	path := writeTestConfig(t, `
+[backend]
+type = "openai"
+endpoint = "http://localhost:8008"
+`)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.StreamOverride.Mode != "passthrough" {
+		t.Fatalf("StreamOverride.Mode = %q, want passthrough", cfg.StreamOverride.Mode)
+	}
+}
+
+func TestLoadRejectsInvalidStreamOverrideMode(t *testing.T) {
+	path := writeTestConfig(t, `
+[backend]
+type = "openai"
+endpoint = "http://localhost:8008"
+
+[stream_override]
+mode = "sometimes"
+`)
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("Load() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "stream_override.mode") {
+		t.Fatalf("Load() error = %v, want stream_override.mode error", err)
+	}
+}
+
 func TestLoadAppliesOperationalDefaults(t *testing.T) {
 	path := writeTestConfig(t, `
 [backend]

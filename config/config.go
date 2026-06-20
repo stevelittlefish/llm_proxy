@@ -14,6 +14,7 @@ type Config struct {
 	Database            DatabaseConfig            `toml:"database"`
 	RequestSanitization RequestSanitizationConfig `toml:"request_sanitization"`
 	ChatTextInjection   ChatTextInjectionConfig   `toml:"chat_text_injection"`
+	StreamOverride      StreamOverrideConfig      `toml:"stream_override"`
 }
 
 // ServerConfig holds the server settings
@@ -60,6 +61,12 @@ type ChatTextInjectionConfig struct {
 	Mode    string `toml:"mode"`    // "first", "last", or "system" - which message to inject into
 }
 
+// StreamOverrideConfig holds settings for forcing the streaming behavior of
+// requests regardless of what the client asked for.
+type StreamOverrideConfig struct {
+	Mode string `toml:"mode"` // "passthrough", "always", or "never"
+}
+
 // Load reads and parses the configuration file
 func Load(path string) (*Config, error) {
 	var config Config
@@ -93,6 +100,14 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("invalid request_sanitization.max_tokens_limit: %d (must be 0 or greater)", config.RequestSanitization.MaxTokensLimit)
 	}
 
+	// Validate stream override mode
+	if config.StreamOverride.Mode != "" &&
+		config.StreamOverride.Mode != "passthrough" &&
+		config.StreamOverride.Mode != "always" &&
+		config.StreamOverride.Mode != "never" {
+		return nil, fmt.Errorf("invalid stream_override.mode: %s (must be 'passthrough', 'always', or 'never')", config.StreamOverride.Mode)
+	}
+
 	// Set defaults
 	if config.Server.Host == "" {
 		config.Server.Host = "0.0.0.0"
@@ -117,6 +132,9 @@ func Load(path string) (*Config, error) {
 	}
 	if config.RequestSanitization.MaxTokensPolicy == "" {
 		config.RequestSanitization.MaxTokensPolicy = "preserve"
+	}
+	if config.StreamOverride.Mode == "" {
+		config.StreamOverride.Mode = "passthrough"
 	}
 
 	return &config, nil

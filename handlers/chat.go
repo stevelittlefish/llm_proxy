@@ -71,6 +71,8 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	applyChatRequestSanitization(&req, h.config)
 	applyChatFeatures(&req, h.config)
+	clientWantsStream := req.Stream
+	req.Stream = resolveStream(clientWantsStream, h.config)
 
 	// Log request messages if enabled
 	if h.config.Server.LogMessages {
@@ -90,7 +92,7 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	respChan, backendMeta, err := h.backend.Chat(r.Context(), req)
 	if err != nil {
 		log.Printf("Backend error: %v", err)
-		h.logRequest(startTime, req.Model, req.Stream, originalMessages, "", http.StatusInternalServerError, err.Error(), string(frontendReqJSON), "", backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL, originalLastMessage)
+		h.logRequest(startTime, req.Model, clientWantsStream, originalMessages, "", http.StatusInternalServerError, err.Error(), string(frontendReqJSON), "", backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL, originalLastMessage)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -107,6 +109,7 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Stream responses
 	var fullResponse strings.Builder
 	var responses []models.ChatResponse
+	var combined models.ChatResponse
 	encoder := json.NewEncoder(w)
 
 	for resp := range respChan {
@@ -115,17 +118,57 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Always store responses for database logging
 		responses = append(responses, resp)
 
-		if err := encoder.Encode(resp); err != nil {
-			log.Printf("Error encoding response: %v", err)
-			break
+		// Accumulate into a single response in case the client needs the
+		// non-streamed shape even though the backend call streamed (or
+		// vice versa) due to stream_override.
+		combined.Model = resp.Model
+		combined.CreatedAt = resp.CreatedAt
+		if resp.Message.Role != "" {
+			combined.Message.Role = resp.Message.Role
+		}
+		combined.Message.Content += resp.Message.Content
+		combined.Message.Thinking += resp.Message.Thinking
+		if len(resp.Message.ToolCalls) > 0 {
+			combined.Message.ToolCalls = resp.Message.ToolCalls
+		}
+		if resp.Done {
+			combined.Done = true
+			combined.DoneReason = resp.DoneReason
+			combined.TotalDuration = resp.TotalDuration
+			combined.LoadDuration = resp.LoadDuration
+			combined.PromptEvalCount = resp.PromptEvalCount
+			combined.PromptEvalDuration = resp.PromptEvalDuration
+			combined.EvalCount = resp.EvalCount
+			combined.EvalDuration = resp.EvalDuration
+			combined.Usage = resp.Usage
 		}
 
-		if f, ok := w.(http.Flusher); ok {
-			f.Flush()
+		// Only forward chunks as they arrive if the client actually asked
+		// to stream; otherwise wait and send the aggregated response once.
+		if clientWantsStream {
+			if err := encoder.Encode(resp); err != nil {
+				log.Printf("Error encoding response: %v", err)
+				break
+			}
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
 		}
 
 		if resp.Done {
 			break
+		}
+	}
+
+	if !clientWantsStream {
+		if combined.Message.Role == "" {
+			combined.Message.Role = "assistant"
+		}
+		if err := encoder.Encode(combined); err != nil {
+			log.Printf("Error encoding response: %v", err)
+		}
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
 		}
 	}
 
@@ -144,20 +187,25 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Capture frontend response as newline-delimited JSON (matching actual streamed format)
+	// Capture frontend response as newline-delimited JSON (matching what was
+	// actually written to the client: per-chunk if streamed, one object otherwise)
 	var frontendRespBuilder strings.Builder
-	for i, resp := range responses {
-		respJSON, err := json.Marshal(resp)
-		if err == nil {
-			frontendRespBuilder.Write(respJSON)
-			if i < len(responses)-1 {
-				frontendRespBuilder.WriteString("\n")
+	if clientWantsStream {
+		for i, resp := range responses {
+			respJSON, err := json.Marshal(resp)
+			if err == nil {
+				frontendRespBuilder.Write(respJSON)
+				if i < len(responses)-1 {
+					frontendRespBuilder.WriteString("\n")
+				}
 			}
 		}
+	} else if respJSON, err := json.Marshal(combined); err == nil {
+		frontendRespBuilder.Write(respJSON)
 	}
 
 	// Log the request/response (use original messages, not injected version)
-	h.logRequest(startTime, req.Model, req.Stream, originalMessages, fullResponse.String(), http.StatusOK, "", string(frontendReqJSON), frontendRespBuilder.String(), backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL, originalLastMessage)
+	h.logRequest(startTime, req.Model, clientWantsStream, originalMessages, fullResponse.String(), http.StatusOK, "", string(frontendReqJSON), frontendRespBuilder.String(), backendMeta.RawRequest, backendMeta.RawResponse, backendMeta.URL, originalLastMessage)
 }
 
 // logRequest logs the request and response to the database
