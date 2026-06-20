@@ -142,10 +142,10 @@ func TestOpenAIBackendGemma4FixStripsReasoningChannelLeak(t *testing.T) {
 
 // TestOpenAIBackendGemma4FixRecoversCleanFailure covers the "clean failure"
 // shape from the spec: the entire turn is corrupted with nothing legitimate
-// forwarded yet, so the proxy should silently retry (with the same messages,
-// but stream:false - the corruption is specific to vLLM's streaming gemma4
-// parser, so retries deliberately avoid it) and the client should see only
-// the clean recovered output.
+// forwarded yet, and the native-format parser cannot handle it (no args
+// block), so the proxy falls through to a silent retry (with the same
+// messages, but stream:false - the corruption is specific to vLLM's streaming
+// gemma4 parser) and the client should see only the clean recovered output.
 func TestOpenAIBackendGemma4FixRecoversCleanFailure(t *testing.T) {
 	b := NewOpenAIBackend("http://backend.test", 10, false, true)
 	var requestBodies []models.OpenAIChatRequest
@@ -158,8 +158,10 @@ func TestOpenAIBackendGemma4FixRecoversCleanFailure(t *testing.T) {
 		requestBodies = append(requestBodies, req)
 
 		if len(requestBodies) == 1 {
+			// Missing the {args} block — native parser cannot parse this, so the
+			// fix falls through to the non-streaming retry path.
 			sse := strings.Join([]string{
-				`data: {"choices":[{"delta":{"role":"assistant","content":"<|tool_call>call:read{path:<|\"|>x.html<|\"|>}<tool_call|>"},"finish_reason":null}]}`,
+				`data: {"choices":[{"delta":{"role":"assistant","content":"<|tool_call>call:read<tool_call|>"},"finish_reason":null}]}`,
 				`data: {"choices":[{"delta":{},"finish_reason":"stop"}]}`,
 				`data: [DONE]`,
 				"",
@@ -311,8 +313,9 @@ data: [DONE]
 // of the synthetic, larger-chunk fixtures used elsewhere in this file: the
 // real bug streams the leaked syntax one token at a time, and the markers
 // themselves still always arrive as complete, undivided chunks. Nothing
-// legitimate precedes the corruption, so recovery should silently retry and
-// the client should see only the clean, recovered tool call.
+// legitimate precedes the corruption, so the native tool-call parser picks up
+// the trapped bytes and synthesises a proper tool_calls response on the first
+// attempt — no retry request is made.
 func TestOpenAIBackendGemma4FixDetectsRealWorldCleanFailurePayload(t *testing.T) {
 	b := NewOpenAIBackend("http://backend.test", 10, false, true)
 	var requestBodies []models.OpenAIChatRequest
@@ -323,13 +326,7 @@ func TestOpenAIBackendGemma4FixDetectsRealWorldCleanFailurePayload(t *testing.T)
 			t.Fatalf("Unmarshal() error = %v", err)
 		}
 		requestBodies = append(requestBodies, req)
-
-		if len(requestBodies) == 1 {
-			return textResponse("text/event-stream", gemma4RealWorldCleanFailurePayload), nil
-		}
-
-		jsonResp := `{"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{"id":"call-1","type":"function","function":{"name":"bash","arguments":"{\"command\":\"find . -type d -not -path '*/.*' -not -path '.' | sort -r\"}"}}]},"finish_reason":"tool_calls"}]}`
-		return textResponse("application/json", jsonResp), nil
+		return textResponse("text/event-stream", gemma4RealWorldCleanFailurePayload), nil
 	})
 
 	respChan, _, err := b.Chat(context.Background(), models.ChatRequest{
@@ -348,14 +345,11 @@ func TestOpenAIBackendGemma4FixDetectsRealWorldCleanFailurePayload(t *testing.T)
 		responses = append(responses, resp)
 	}
 
-	if len(requestBodies) != 2 {
-		t.Fatalf("request count = %d, want 2 (original + 1 retry)", len(requestBodies))
+	if len(requestBodies) != 1 {
+		t.Fatalf("request count = %d, want 1 (native parser recovers without a retry)", len(requestBodies))
 	}
 	if !requestBodies[0].Stream {
 		t.Fatal("original request stream = false, want true")
-	}
-	if requestBodies[1].Stream {
-		t.Fatal("retry request stream = true, want false (this exact shape - byte-identical streaming retry - is what produced an unrecoverable failure in production)")
 	}
 
 	if fullContent.Len() != 0 {
@@ -376,11 +370,6 @@ func TestOpenAIBackendGemma4FixDetectsRealWorldCleanFailurePayload(t *testing.T)
 			if fn["name"] != "bash" {
 				t.Fatalf("tool call = %#v, want name bash", tc)
 			}
-			// Recovery always goes through the non-streaming response path
-			// (see scanGemma4ChatResponse), which - like handleNonStreamingChat
-			// elsewhere in this file - passes arguments through as the raw
-			// JSON string the backend sent, rather than parsing it into an
-			// object the way the streaming tool-call accumulator does.
 			argsStr, ok := fn["arguments"].(string)
 			if !ok {
 				t.Fatalf("tool call arguments = %#v (%T), want JSON string", fn["arguments"], fn["arguments"])
@@ -397,8 +386,224 @@ func TestOpenAIBackendGemma4FixDetectsRealWorldCleanFailurePayload(t *testing.T)
 	if !sawToolCall {
 		t.Fatalf("no tool_calls in responses: %#v", responses)
 	}
-	if last := responses[len(responses)-1]; !last.Done || last.DoneReason != "tool_calls" {
-		t.Fatalf("final response = %#v, want done tool_calls", last)
+	if last := responses[len(responses)-1]; !last.Done {
+		t.Fatalf("final response = %#v, want Done=true", last)
+	}
+}
+
+// gemma4RealWorldExecuteCodePayload is a verbatim reproduction of the SSE
+// stream observed in production for request #3077: Gemma 4 streaming a
+// multi-line Python execute_code call via the hyphen-separated native format
+// (call-execute-code), one token per chunk. The tool name in the native format
+// is hyphenated ("execute-code"); the parser must convert it to the
+// underscore form ("execute_code") that the Hermes client registered.
+const gemma4RealWorldExecuteCodePayload = `data: {"id":"chatcmpl-8df3d06daddb964c","object":"chat.completion.chunk","created":1781974989,"model":"gemma4-31b","choices":[{"index":0,"delta":{"role":"assistant","content":""},"logprobs":null,"finish_reason":null}],"prompt_token_ids":null,"prompt_text":null}
+
+data: {"id":"chatcmpl-8df3d06daddb964c","object":"chat.completion.chunk","created":1781974989,"model":"gemma4-31b","choices":[{"index":0,"delta":{"content":"<|tool_call>"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-8df3d06daddb964c","object":"chat.completion.chunk","created":1781974989,"model":"gemma4-31b","choices":[{"index":0,"delta":{"content":"call-"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-8df3d06daddb964c","object":"chat.completion.chunk","created":1781974989,"model":"gemma4-31b","choices":[{"index":0,"delta":{"content":"execute"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-8df3d06daddb964c","object":"chat.completion.chunk","created":1781974989,"model":"gemma4-31b","choices":[{"index":0,"delta":{"content":"-"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-8df3d06daddb964c","object":"chat.completion.chunk","created":1781974989,"model":"gemma4-31b","choices":[{"index":0,"delta":{"content":"code"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-8df3d06daddb964c","object":"chat.completion.chunk","created":1781974989,"model":"gemma4-31b","choices":[{"index":0,"delta":{"content":"{"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-8df3d06daddb964c","object":"chat.completion.chunk","created":1781974989,"model":"gemma4-31b","choices":[{"index":0,"delta":{"content":"code"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-8df3d06daddb964c","object":"chat.completion.chunk","created":1781974989,"model":"gemma4-31b","choices":[{"index":0,"delta":{"content":":"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-8df3d06daddb964c","object":"chat.completion.chunk","created":1781974989,"model":"gemma4-31b","choices":[{"index":0,"delta":{"content":"<|\"|>"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-8df3d06daddb964c","object":"chat.completion.chunk","created":1781974989,"model":"gemma4-31b","choices":[{"index":0,"delta":{"content":"from"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-8df3d06daddb964c","object":"chat.completion.chunk","created":1781974989,"model":"gemma4-31b","choices":[{"index":0,"delta":{"content":" hermes_tools"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-8df3d06daddb964c","object":"chat.completion.chunk","created":1781974989,"model":"gemma4-31b","choices":[{"index":0,"delta":{"content":" import"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-8df3d06daddb964c","object":"chat.completion.chunk","created":1781974989,"model":"gemma4-31b","choices":[{"index":0,"delta":{"content":" read_file\n"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-8df3d06daddb964c","object":"chat.completion.chunk","created":1781974989,"model":"gemma4-31b","choices":[{"index":0,"delta":{"content":"print(read_file('/home/arthur/projects/agora/internal/store/messages.go')['content'])"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-8df3d06daddb964c","object":"chat.completion.chunk","created":1781974989,"model":"gemma4-31b","choices":[{"index":0,"delta":{"content":"\n"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-8df3d06daddb964c","object":"chat.completion.chunk","created":1781974989,"model":"gemma4-31b","choices":[{"index":0,"delta":{"content":"<|\"|>"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-8df3d06daddb964c","object":"chat.completion.chunk","created":1781974989,"model":"gemma4-31b","choices":[{"index":0,"delta":{"content":"}"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-8df3d06daddb964c","object":"chat.completion.chunk","created":1781974989,"model":"gemma4-31b","choices":[{"index":0,"delta":{"content":"<tool_call|>"},"logprobs":null,"finish_reason":null,"token_ids":null}]}
+
+data: {"id":"chatcmpl-8df3d06daddb964c","object":"chat.completion.chunk","created":1781974989,"model":"gemma4-31b","choices":[{"index":0,"delta":{"content":""},"logprobs":null,"finish_reason":"stop","stop_reason":50,"token_ids":null}]}
+
+data: {"id":"chatcmpl-8df3d06daddb964c","object":"chat.completion.chunk","created":1781974989,"model":"gemma4-31b","choices":[],"usage":{"prompt_tokens":45947,"total_tokens":46035,"completion_tokens":88},"system_fingerprint":"vllm-0.23.0-tp2-39ad13f9"}
+
+data: [DONE]
+`
+
+// TestParseGemma4NativeToolCalls exercises the parser directly with the two
+// separator formats observed in production.
+func TestParseGemma4NativeToolCalls(t *testing.T) {
+	tests := []struct {
+		name         string
+		trapped      string
+		wantOK       bool
+		wantFuncName string
+		wantArgKey   string
+		wantArgVal   string
+	}{
+		{
+			name:         "colon-separator simple",
+			trapped:      `<|tool_call>call:bash{command:<|"|>ls -la<|"|>}<tool_call|>`,
+			wantOK:       true,
+			wantFuncName: "bash",
+			wantArgKey:   "command",
+			wantArgVal:   "ls -la",
+		},
+		{
+			name:         "hyphen-separator converts to underscore",
+			trapped:      `<|tool_call>call-execute-code{code:<|"|>print("hello")<|"|>}<tool_call|>`,
+			wantOK:       true,
+			wantFuncName: "execute_code",
+			wantArgKey:   "code",
+			wantArgVal:   `print("hello")`,
+		},
+		{
+			name:         "value contains braces (Python f-string)",
+			trapped:      "<|tool_call>call-execute-code{code:<|\"|>print(f\"{x}\")\n<|\"|>}<tool_call|>",
+			wantOK:       true,
+			wantFuncName: "execute_code",
+			wantArgKey:   "code",
+			wantArgVal:   "print(f\"{x}\")\n",
+		},
+		{
+			name:    "missing args block",
+			trapped: `<|tool_call>call:read<tool_call|>`,
+			wantOK:  false,
+		},
+		{
+			name:    "no call prefix",
+			trapped: `<|tool_call>BADFORMAT{}<tool_call|>`,
+			wantOK:  false,
+		},
+		{
+			name:    "no open marker",
+			trapped: `call:bash{command:<|"|>ls<|"|>}<tool_call|>`,
+			wantOK:  false,
+		},
+		{
+			name:    "trailing garbage",
+			trapped: `<|tool_call>call:bash{command:<|"|>ls<|"|>}<tool_call|> extra`,
+			wantOK:  false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			toolCalls, ok := parseGemma4NativeToolCalls(tc.trapped)
+			if ok != tc.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tc.wantOK)
+			}
+			if !tc.wantOK {
+				return
+			}
+			if len(toolCalls) != 1 {
+				t.Fatalf("len(toolCalls) = %d, want 1", len(toolCalls))
+			}
+			call := toolCalls[0].(map[string]interface{})
+			fn := call["function"].(map[string]interface{})
+			if fn["name"] != tc.wantFuncName {
+				t.Fatalf("name = %q, want %q", fn["name"], tc.wantFuncName)
+			}
+			argsStr, ok := fn["arguments"].(string)
+			if !ok {
+				t.Fatalf("arguments type = %T, want string", fn["arguments"])
+			}
+			var args map[string]interface{}
+			if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
+				t.Fatalf("Unmarshal(arguments) error = %v", err)
+			}
+			if args[tc.wantArgKey] != tc.wantArgVal {
+				t.Fatalf("args[%q] = %q, want %q", tc.wantArgKey, args[tc.wantArgKey], tc.wantArgVal)
+			}
+		})
+	}
+}
+
+// TestOpenAIBackendGemma4FixParsesRealWorldExecuteCodePayload replays the
+// verbatim SSE stream from production request #3077: Gemma 4 streaming a
+// Python execute_code call in the hyphen-separated native format across many
+// tiny deltas. The native parser must reconstruct the tool call from the
+// accumulated trapped bytes and return it to the client on the first attempt,
+// without any retry request.
+func TestOpenAIBackendGemma4FixParsesRealWorldExecuteCodePayload(t *testing.T) {
+	b := NewOpenAIBackend("http://backend.test", 10, false, true)
+	var requestCount int
+	b.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		requestCount++
+		return textResponse("text/event-stream", gemma4RealWorldExecuteCodePayload), nil
+	})
+
+	respChan, _, err := b.Chat(context.Background(), models.ChatRequest{
+		Model:    "gemma4-31b",
+		Stream:   true,
+		Messages: []models.Message{{Role: "user", Content: "check messages.go"}},
+	})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	var responses []models.ChatResponse
+	var fullContent strings.Builder
+	for resp := range respChan {
+		fullContent.WriteString(resp.Message.Content)
+		responses = append(responses, resp)
+	}
+
+	if requestCount != 1 {
+		t.Fatalf("request count = %d, want 1 (native parser recovers without retry)", requestCount)
+	}
+	if fullContent.Len() != 0 {
+		t.Fatalf("content = %q, want empty (nothing legitimate preceded the corruption)", fullContent.String())
+	}
+	for _, resp := range responses {
+		if strings.Contains(resp.Message.Content, "tool_call") || strings.Contains(resp.Message.Content, `<|"|>`) {
+			t.Fatalf("leaked control tokens reached client: %#v", resp)
+		}
+	}
+
+	var sawToolCall bool
+	for _, resp := range responses {
+		if len(resp.Message.ToolCalls) > 0 {
+			sawToolCall = true
+			call := resp.Message.ToolCalls[0].(map[string]interface{})
+			fn := call["function"].(map[string]interface{})
+			if fn["name"] != "execute_code" {
+				t.Fatalf("function name = %q, want execute_code (hyphen-to-underscore conversion)", fn["name"])
+			}
+			argsStr, ok := fn["arguments"].(string)
+			if !ok {
+				t.Fatalf("arguments type = %T, want string", fn["arguments"])
+			}
+			var args map[string]interface{}
+			if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
+				t.Fatalf("Unmarshal(arguments) error = %v, args = %q", err, argsStr)
+			}
+			codeArg, ok := args["code"].(string)
+			if !ok {
+				t.Fatalf("args[code] type = %T, want string", args["code"])
+			}
+			if !strings.Contains(codeArg, "read_file") {
+				t.Fatalf("args[code] = %q, want Python code containing read_file", codeArg)
+			}
+		}
+	}
+	if !sawToolCall {
+		t.Fatalf("no tool_calls in responses: %#v", responses)
+	}
+	if last := responses[len(responses)-1]; !last.Done {
+		t.Fatalf("final response = %#v, want Done=true", last)
 	}
 }
 
@@ -489,9 +694,10 @@ func TestOpenAIBackendGemma4FixNudgesAfterTrailingFailure(t *testing.T) {
 }
 
 // TestOpenAIBackendGemma4FixFailsSafeAfterExhaustingRetries covers a
-// persistently corrupted request shape: retries must be capped, and once
-// exhausted the client must receive a clearly distinguishable error instead
-// of any leaked control-token text.
+// persistently corrupted request shape where the native-format parser cannot
+// help (missing args block): retries must be capped, and once exhausted the
+// client must receive a clearly distinguishable error instead of any leaked
+// control-token text.
 func TestOpenAIBackendGemma4FixFailsSafeAfterExhaustingRetries(t *testing.T) {
 	requestCount := 0
 	b := NewOpenAIBackend("http://backend.test", 10, false, true)
@@ -499,8 +705,9 @@ func TestOpenAIBackendGemma4FixFailsSafeAfterExhaustingRetries(t *testing.T) {
 		requestCount++
 
 		if requestCount == 1 {
+			// Missing {args} block — native parser cannot parse this.
 			sse := strings.Join([]string{
-				`data: {"choices":[{"delta":{"role":"assistant","content":"<|tool_call>call:read{path:<|\"|>x.html<|\"|>}<tool_call|>"},"finish_reason":null}]}`,
+				`data: {"choices":[{"delta":{"role":"assistant","content":"<|tool_call>call:read<tool_call|>"},"finish_reason":null}]}`,
 				`data: {"choices":[{"delta":{},"finish_reason":"stop"}]}`,
 				`data: [DONE]`,
 				"",
@@ -509,9 +716,9 @@ func TestOpenAIBackendGemma4FixFailsSafeAfterExhaustingRetries(t *testing.T) {
 		}
 
 		// Subsequent attempts are non-streaming retries; this backend keeps
-		// producing corrupted output even off the streaming parser path, so
-		// recovery should still exhaust its attempts and fail safe.
-		jsonResp := `{"choices":[{"index":0,"message":{"role":"assistant","content":"<|tool_call>call:read{path:<|\"|>x.html<|\"|>}<tool_call|>"},"finish_reason":"stop"}]}`
+		// producing the same unparseable corrupted output, so recovery exhausts
+		// its attempts and fails safe.
+		jsonResp := `{"choices":[{"index":0,"message":{"role":"assistant","content":"<|tool_call>call:read<tool_call|>"},"finish_reason":"stop"}]}`
 		return textResponse("application/json", jsonResp), nil
 	})
 

@@ -196,6 +196,129 @@ func gemma4FindEarliestMarker(s string) (matchIdx int, matchLen int, isChannelOp
 	return matchIdx, matchLen, isChannelOpen
 }
 
+// parseGemma4NativeToolCalls attempts to extract structured tool calls from
+// Gemma 4's native wire format, which vLLM sometimes places in the content
+// field instead of tool_calls even in non-streaming mode. The format is:
+//
+//	<|tool_call>call-{name}{key:<|\"|>value<|\"|>,...}<tool_call|>
+//
+// Multiple consecutive calls (each with their own open/close markers) are
+// supported. Returns (nil, false) if the input does not match the format.
+func parseGemma4NativeToolCalls(trapped string) ([]interface{}, bool) {
+	s := strings.TrimSpace(trapped)
+	var toolCalls []interface{}
+
+	for strings.HasPrefix(s, gemma4ToolCallOpenMarker) {
+		s = strings.TrimPrefix(s, gemma4ToolCallOpenMarker)
+
+		// Two separators are observed in production:
+		//   call-execute-code{...}  (hyphen; function name may itself be hyphenated)
+		//   call:bash{...}          (colon; function name already uses underscores)
+		if !strings.HasPrefix(s, "call") || len(s) < 5 {
+			return nil, false
+		}
+		sep := s[4] // character immediately after "call"
+		if sep != '-' && sep != ':' {
+			return nil, false
+		}
+		s = s[5:] // strip "call" + separator
+
+		// Everything up to the first '{' is the function identifier.
+		braceIdx := strings.Index(s, "{")
+		if braceIdx < 0 {
+			return nil, false
+		}
+		rawName := s[:braceIdx]
+		s = s[braceIdx:] // now starts with '{'
+
+		// The close-marker ends this call; everything before it (including the
+		// trailing '}') is the args block.
+		endIdx := strings.Index(s, gemma4ToolCallCloseMarker)
+		if endIdx < 0 {
+			return nil, false
+		}
+		argsBlock := s[:endIdx]
+		s = s[endIdx+len(gemma4ToolCallCloseMarker):]
+
+		args, ok := parseGemma4ArgsBlock(argsBlock)
+		if !ok {
+			return nil, false
+		}
+
+		argsJSON, err := json.Marshal(args)
+		if err != nil {
+			return nil, false
+		}
+
+		// The call-hyphen form uses hyphens where the actual tool name uses
+		// underscores (e.g. "execute-code" → "execute_code"). The call-colon
+		// form already carries the real name verbatim (e.g. "bash").
+		var functionName string
+		if sep == '-' {
+			functionName = strings.ReplaceAll(rawName, "-", "_")
+		} else {
+			functionName = rawName
+		}
+
+		toolCalls = append(toolCalls, map[string]interface{}{
+			"id":   "call-" + rawName,
+			"type": "function",
+			"function": map[string]interface{}{
+				"name":      functionName,
+				"arguments": string(argsJSON),
+			},
+		})
+	}
+
+	if len(toolCalls) == 0 || strings.TrimSpace(s) != "" {
+		return nil, false
+	}
+	return toolCalls, true
+}
+
+// parseGemma4ArgsBlock parses the args container that follows a native
+// Gemma 4 tool-call identifier, e.g.:
+//
+//	{code:<|\"|>print("hello")<|\"|>}
+//
+// Values are always delimited by <|\"|>...<|\"|>. Returns (nil, false) if the
+// block does not match the expected format.
+func parseGemma4ArgsBlock(block string) (map[string]interface{}, bool) {
+	block = strings.TrimSpace(block)
+	if !strings.HasPrefix(block, "{") || !strings.HasSuffix(block, "}") {
+		return nil, false
+	}
+	inner := block[1 : len(block)-1]
+
+	args := map[string]interface{}{}
+	for len(inner) > 0 {
+		inner = strings.TrimLeft(inner, " \t\n,")
+		if inner == "" {
+			break
+		}
+
+		colonIdx := strings.Index(inner, ":")
+		if colonIdx < 0 {
+			return nil, false
+		}
+		key := strings.TrimSpace(inner[:colonIdx])
+		rest := inner[colonIdx+1:]
+
+		if !strings.HasPrefix(rest, gemma4ToolCallStringDelim) {
+			return nil, false
+		}
+		rest = rest[len(gemma4ToolCallStringDelim):]
+
+		closeIdx := strings.Index(rest, gemma4ToolCallStringDelim)
+		if closeIdx < 0 {
+			return nil, false
+		}
+		args[key] = rest[:closeIdx]
+		inner = rest[closeIdx+len(gemma4ToolCallStringDelim):]
+	}
+	return args, true
+}
+
 // gemma4ScanResult summarizes one streaming attempt for the recovery loop in
 // handleStreamingChatGemma4Fix.
 type gemma4ScanResult struct {
@@ -534,6 +657,40 @@ func (o *OpenAIBackend) handleStreamingChatGemma4Fix(ctx context.Context, firstB
 
 		log.Printf("[gemma4_fix] tool-call leak detected (model=%q, attempt=%d/%d, stream=%v, finish_reason=%q, content_already_forwarded=%v): suppressed %q",
 			model, attempt, gemma4MaxAttempts, streaming, result.doneReason, anyContentForwardedThisTurn, result.trapped)
+
+		// When no content has been forwarded yet this turn, try to parse the
+		// native Gemma 4 tool-call format directly from the trapped bytes. If
+		// parsing succeeds we can synthesize a proper tool_calls response and
+		// return immediately, without burning a retry request.  This handles
+		// the case where vLLM produces the native format in non-streaming mode
+		// too (so stream=false retries would fail identically).
+		if pendingProse.Len() == 0 {
+			if toolCalls, ok := parseGemma4NativeToolCalls(result.trapped); ok {
+				log.Printf("[gemma4_fix] native tool-call parsed from trapped content (model=%q, attempt=%d/%d, function=%q): synthesising tool_calls response",
+					model, attempt, gemma4MaxAttempts, func() string {
+						if len(toolCalls) > 0 {
+							if tc, ok := toolCalls[0].(map[string]interface{}); ok {
+								if fn, ok := tc["function"].(map[string]interface{}); ok {
+									if name, ok := fn["name"].(string); ok {
+										return name
+									}
+								}
+							}
+						}
+						return "unknown"
+					}())
+				metadata.RawResponse = rawResponse.String()
+				respChan <- models.ChatResponse{
+					Model:     model,
+					CreatedAt: time.Now(),
+					Message:   models.Message{Role: "assistant", ToolCalls: toolCalls},
+					Done:      false,
+				}
+				respChan <- gemma4FinalResponse(model, startTime, result.doneReason, result.tokenCount, result.usage)
+				return
+			}
+			log.Printf("[gemma4_fix] native tool-call parse failed; falling through to retry (model=%q, attempt=%d/%d)", model, attempt, gemma4MaxAttempts)
+		}
 
 		if attempt == gemma4MaxAttempts {
 			break
