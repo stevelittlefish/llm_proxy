@@ -393,6 +393,88 @@ func (o *OpenAIBackend) scanGemma4ChatStream(ctx context.Context, body io.Reader
 	return finish()
 }
 
+// scanGemma4ChatResponse reads one non-streaming (single JSON object) chat
+// completion response and forwards its content/tool_calls to respChan,
+// applying the same gemma4ContentFilter to the complete message content in
+// one pass. Used for every retry/nudge attempt: the corruption this file
+// mitigates is specific to vLLM's *streaming* gemma4 tool-call parser, so
+// once a leak is detected, recovery attempts are deliberately sent with
+// stream:false to avoid walking the model down the same buggy parse path
+// again (confirmed in practice: identical input forced non-streaming does
+// not reproduce the corruption, even when decoding is otherwise
+// deterministic and a verbatim streaming retry reproduces it every time).
+func (o *OpenAIBackend) scanGemma4ChatResponse(body io.Reader, respChan chan<- models.ChatResponse, model string, rawResponse *strings.Builder) gemma4ScanResult {
+	bodyBytes, err := io.ReadAll(body)
+	if err != nil {
+		log.Printf("Error reading non-streaming gemma4_fix response: %v", err)
+		return gemma4ScanResult{corrupted: true, doneReason: "stop"}
+	}
+	rawResponse.Write(bodyBytes)
+	rawResponse.WriteString("\n")
+
+	var openaiResp models.OpenAIChatResponse
+	if err := json.Unmarshal(bodyBytes, &openaiResp); err != nil {
+		log.Printf("Error parsing non-streaming gemma4_fix response: %v", err)
+		return gemma4ScanResult{corrupted: true, doneReason: "stop"}
+	}
+
+	if len(openaiResp.Choices) == 0 || openaiResp.Choices[0].Message == nil {
+		return gemma4ScanResult{corrupted: true, doneReason: "stop", usage: openaiResp.Usage}
+	}
+
+	choice := openaiResp.Choices[0]
+	doneReason := "stop"
+	if choice.FinishReason != "" {
+		doneReason = choice.FinishReason
+	}
+
+	filter := &gemma4ContentFilter{}
+	safe := filter.Feed(choice.Message.Content)
+	safe += filter.Flush()
+	channelLeakStripped, channelLeakContent := filter.ChannelLeakStripped()
+
+	tokenCount := 0
+	var forwarded strings.Builder
+	if !filter.Suspect() {
+		if safe != "" {
+			tokenCount++
+			forwarded.WriteString(safe)
+			respChan <- models.ChatResponse{
+				Model:     model,
+				CreatedAt: time.Now(),
+				Message: models.Message{
+					Role:     "assistant",
+					Content:  safe,
+					Thinking: choice.Message.Thinking,
+				},
+				Done: false,
+			}
+		}
+		if len(choice.Message.ToolCalls) > 0 {
+			respChan <- models.ChatResponse{
+				Model:     model,
+				CreatedAt: time.Now(),
+				Message: models.Message{
+					Role:      "assistant",
+					ToolCalls: choice.Message.ToolCalls,
+				},
+				Done: false,
+			}
+		}
+	}
+
+	return gemma4ScanResult{
+		corrupted:           filter.Suspect(),
+		forwardedText:       forwarded.String(),
+		doneReason:          doneReason,
+		usage:               openaiResp.Usage,
+		tokenCount:          tokenCount,
+		trapped:             filter.Trapped(),
+		channelLeakStripped: channelLeakStripped,
+		channelLeakContent:  channelLeakContent,
+	}
+}
+
 // handleStreamingChatGemma4Fix wraps the normal OpenAI streaming chat
 // handling with detection and recovery for the leak described above. It
 // preserves live streaming for the overwhelming majority of turns (no
@@ -403,6 +485,9 @@ func (o *OpenAIBackend) handleStreamingChatGemma4Fix(ctx context.Context, firstB
 	var rawResponse strings.Builder
 
 	body := firstBody
+	streaming := true // only the first attempt mirrors the original request;
+	// every retry/nudge below forces stream:false, since the corruption this
+	// file mitigates is specific to vLLM's streaming gemma4 parser.
 	messages := convertedMessages
 	var pendingProse strings.Builder // forwarded content not yet folded into messages for a nudge
 	anyContentForwardedThisTurn := false
@@ -413,10 +498,15 @@ func (o *OpenAIBackend) handleStreamingChatGemma4Fix(ctx context.Context, firstB
 
 	for attempt := 1; attempt <= gemma4MaxAttempts; attempt++ {
 		if attempt > 1 {
-			rawResponse.WriteString(fmt.Sprintf("\n--- gemma4_fix attempt %d ---\n", attempt))
+			rawResponse.WriteString(fmt.Sprintf("\n--- gemma4_fix attempt %d (stream=%v) ---\n", attempt, streaming))
 		}
 
-		result := o.scanGemma4ChatStream(ctx, body, respChan, model, &rawResponse)
+		var result gemma4ScanResult
+		if streaming {
+			result = o.scanGemma4ChatStream(ctx, body, respChan, model, &rawResponse)
+		} else {
+			result = o.scanGemma4ChatResponse(body, respChan, model, &rawResponse)
+		}
 
 		if closer, ok := body.(io.Closer); ok && attempt > 1 {
 			closer.Close()
@@ -442,17 +532,26 @@ func (o *OpenAIBackend) handleStreamingChatGemma4Fix(ctx context.Context, firstB
 			return
 		}
 
-		log.Printf("[gemma4_fix] tool-call leak detected (model=%q, attempt=%d/%d, finish_reason=%q, content_already_forwarded=%v): suppressed %q",
-			model, attempt, gemma4MaxAttempts, result.doneReason, anyContentForwardedThisTurn, result.trapped)
+		log.Printf("[gemma4_fix] tool-call leak detected (model=%q, attempt=%d/%d, stream=%v, finish_reason=%q, content_already_forwarded=%v): suppressed %q",
+			model, attempt, gemma4MaxAttempts, streaming, result.doneReason, anyContentForwardedThisTurn, result.trapped)
 
 		if attempt == gemma4MaxAttempts {
 			break
 		}
 
+		// Every retry/nudge from here on is sent with stream:false: this
+		// corruption is specific to vLLM's streaming gemma4 parser, so
+		// resending with stream:true again would just walk the model down
+		// the same buggy parse path (observed in practice to reproduce
+		// byte-for-byte identical corrupted output on a deterministic
+		// backend, exhausting retries for no benefit).
+		req.Stream = false
+		streaming = false
+
 		var nextMessages []models.Message
 		if pendingProse.Len() == 0 {
 			// Case A: nothing forwarded yet this turn, safe to discard and
-			// retry the byte-identical request.
+			// retry with the same messages (now non-streaming, see above).
 			nextMessages = messages
 		} else {
 			// Case B: real content already shown; suppress only the

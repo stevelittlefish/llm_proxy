@@ -142,14 +142,20 @@ func TestOpenAIBackendGemma4FixStripsReasoningChannelLeak(t *testing.T) {
 
 // TestOpenAIBackendGemma4FixRecoversCleanFailure covers the "clean failure"
 // shape from the spec: the entire turn is corrupted with nothing legitimate
-// forwarded yet, so the proxy should silently retry the byte-identical
-// request and the client should see only the clean recovered output.
+// forwarded yet, so the proxy should silently retry (with the same messages,
+// but stream:false - the corruption is specific to vLLM's streaming gemma4
+// parser, so retries deliberately avoid it) and the client should see only
+// the clean recovered output.
 func TestOpenAIBackendGemma4FixRecoversCleanFailure(t *testing.T) {
 	b := NewOpenAIBackend("http://backend.test", 10, false, true)
-	var requestBodies []string
+	var requestBodies []models.OpenAIChatRequest
 	b.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		body, _ := io.ReadAll(r.Body)
-		requestBodies = append(requestBodies, string(body))
+		bodyBytes, _ := io.ReadAll(r.Body)
+		var req models.OpenAIChatRequest
+		if err := json.Unmarshal(bodyBytes, &req); err != nil {
+			t.Fatalf("Unmarshal() error = %v", err)
+		}
+		requestBodies = append(requestBodies, req)
 
 		if len(requestBodies) == 1 {
 			sse := strings.Join([]string{
@@ -161,13 +167,8 @@ func TestOpenAIBackendGemma4FixRecoversCleanFailure(t *testing.T) {
 			return textResponse("text/event-stream", sse), nil
 		}
 
-		sse := strings.Join([]string{
-			`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"read","arguments":"{\"path\":\"x.html\"}"}}]}}]}`,
-			`data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`,
-			`data: [DONE]`,
-			"",
-		}, "\n")
-		return textResponse("text/event-stream", sse), nil
+		jsonResp := `{"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{"id":"call-1","type":"function","function":{"name":"read","arguments":"{\"path\":\"x.html\"}"}}]},"finish_reason":"tool_calls"}]}`
+		return textResponse("application/json", jsonResp), nil
 	})
 
 	respChan, _, err := b.Chat(context.Background(), models.ChatRequest{
@@ -187,8 +188,14 @@ func TestOpenAIBackendGemma4FixRecoversCleanFailure(t *testing.T) {
 	if len(requestBodies) != 2 {
 		t.Fatalf("request count = %d, want 2 (original + 1 retry)", len(requestBodies))
 	}
-	if requestBodies[0] != requestBodies[1] {
-		t.Fatalf("retry body differs from original:\n%s\nvs\n%s", requestBodies[0], requestBodies[1])
+	if !requestBodies[0].Stream {
+		t.Fatal("original request stream = false, want true")
+	}
+	if requestBodies[1].Stream {
+		t.Fatal("retry request stream = true, want false (retries must avoid vLLM's streaming gemma4 parser)")
+	}
+	if len(requestBodies[1].Messages) != len(requestBodies[0].Messages) {
+		t.Fatalf("retry messages = %#v, want same messages as original (Case A: nothing forwarded yet)", requestBodies[1].Messages)
 	}
 
 	for _, resp := range responses {
@@ -308,22 +315,21 @@ data: [DONE]
 // the client should see only the clean, recovered tool call.
 func TestOpenAIBackendGemma4FixDetectsRealWorldCleanFailurePayload(t *testing.T) {
 	b := NewOpenAIBackend("http://backend.test", 10, false, true)
-	var requestBodies []string
+	var requestBodies []models.OpenAIChatRequest
 	b.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		body, _ := io.ReadAll(r.Body)
-		requestBodies = append(requestBodies, string(body))
+		bodyBytes, _ := io.ReadAll(r.Body)
+		var req models.OpenAIChatRequest
+		if err := json.Unmarshal(bodyBytes, &req); err != nil {
+			t.Fatalf("Unmarshal() error = %v", err)
+		}
+		requestBodies = append(requestBodies, req)
 
 		if len(requestBodies) == 1 {
 			return textResponse("text/event-stream", gemma4RealWorldCleanFailurePayload), nil
 		}
 
-		sse := strings.Join([]string{
-			`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"bash","arguments":"{\"command\":\"find . -type d -not -path '*/.*' -not -path '.' | sort -r\"}"}}]}}]}`,
-			`data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`,
-			`data: [DONE]`,
-			"",
-		}, "\n")
-		return textResponse("text/event-stream", sse), nil
+		jsonResp := `{"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{"id":"call-1","type":"function","function":{"name":"bash","arguments":"{\"command\":\"find . -type d -not -path '*/.*' -not -path '.' | sort -r\"}"}}]},"finish_reason":"tool_calls"}]}`
+		return textResponse("application/json", jsonResp), nil
 	})
 
 	respChan, _, err := b.Chat(context.Background(), models.ChatRequest{
@@ -345,8 +351,11 @@ func TestOpenAIBackendGemma4FixDetectsRealWorldCleanFailurePayload(t *testing.T)
 	if len(requestBodies) != 2 {
 		t.Fatalf("request count = %d, want 2 (original + 1 retry)", len(requestBodies))
 	}
-	if requestBodies[0] != requestBodies[1] {
-		t.Fatalf("retry body differs from original:\n%s\nvs\n%s", requestBodies[0], requestBodies[1])
+	if !requestBodies[0].Stream {
+		t.Fatal("original request stream = false, want true")
+	}
+	if requestBodies[1].Stream {
+		t.Fatal("retry request stream = true, want false (this exact shape - byte-identical streaming retry - is what produced an unrecoverable failure in production)")
 	}
 
 	if fullContent.Len() != 0 {
@@ -367,7 +376,19 @@ func TestOpenAIBackendGemma4FixDetectsRealWorldCleanFailurePayload(t *testing.T)
 			if fn["name"] != "bash" {
 				t.Fatalf("tool call = %#v, want name bash", tc)
 			}
-			args := fn["arguments"].(map[string]interface{})
+			// Recovery always goes through the non-streaming response path
+			// (see scanGemma4ChatResponse), which - like handleNonStreamingChat
+			// elsewhere in this file - passes arguments through as the raw
+			// JSON string the backend sent, rather than parsing it into an
+			// object the way the streaming tool-call accumulator does.
+			argsStr, ok := fn["arguments"].(string)
+			if !ok {
+				t.Fatalf("tool call arguments = %#v (%T), want JSON string", fn["arguments"], fn["arguments"])
+			}
+			var args map[string]interface{}
+			if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
+				t.Fatalf("Unmarshal(arguments) error = %v, args = %q", err, argsStr)
+			}
 			if args["command"] != "find . -type d -not -path '*/.*' -not -path '.' | sort -r" {
 				t.Fatalf("tool call args = %#v, want recovered find command", args)
 			}
@@ -408,13 +429,8 @@ func TestOpenAIBackendGemma4FixNudgesAfterTrailingFailure(t *testing.T) {
 			return textResponse("text/event-stream", sse), nil
 		}
 
-		sse := strings.Join([]string{
-			`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"read","arguments":"{\"path\":\"x.html\"}"}}]}}]}`,
-			`data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`,
-			`data: [DONE]`,
-			"",
-		}, "\n")
-		return textResponse("text/event-stream", sse), nil
+		jsonResp := `{"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{"id":"call-1","type":"function","function":{"name":"read","arguments":"{\"path\":\"x.html\"}"}}]},"finish_reason":"tool_calls"}]}`
+		return textResponse("application/json", jsonResp), nil
 	})
 
 	respChan, _, err := b.Chat(context.Background(), models.ChatRequest{
@@ -435,6 +451,12 @@ func TestOpenAIBackendGemma4FixNudgesAfterTrailingFailure(t *testing.T) {
 
 	if len(requestBodies) != 2 {
 		t.Fatalf("request count = %d, want 2 (original + 1 nudge)", len(requestBodies))
+	}
+	if !requestBodies[0].Stream {
+		t.Fatal("original request stream = false, want true")
+	}
+	if requestBodies[1].Stream {
+		t.Fatal("nudge request stream = true, want false (retries must avoid vLLM's streaming gemma4 parser)")
 	}
 	if strings.Contains(fullContent.String(), "tool_call") {
 		t.Fatalf("content = %q, leaked control tokens reached client", fullContent.String())
@@ -475,13 +497,22 @@ func TestOpenAIBackendGemma4FixFailsSafeAfterExhaustingRetries(t *testing.T) {
 	b := NewOpenAIBackend("http://backend.test", 10, false, true)
 	b.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		requestCount++
-		sse := strings.Join([]string{
-			`data: {"choices":[{"delta":{"role":"assistant","content":"<|tool_call>call:read{path:<|\"|>x.html<|\"|>}<tool_call|>"},"finish_reason":null}]}`,
-			`data: {"choices":[{"delta":{},"finish_reason":"stop"}]}`,
-			`data: [DONE]`,
-			"",
-		}, "\n")
-		return textResponse("text/event-stream", sse), nil
+
+		if requestCount == 1 {
+			sse := strings.Join([]string{
+				`data: {"choices":[{"delta":{"role":"assistant","content":"<|tool_call>call:read{path:<|\"|>x.html<|\"|>}<tool_call|>"},"finish_reason":null}]}`,
+				`data: {"choices":[{"delta":{},"finish_reason":"stop"}]}`,
+				`data: [DONE]`,
+				"",
+			}, "\n")
+			return textResponse("text/event-stream", sse), nil
+		}
+
+		// Subsequent attempts are non-streaming retries; this backend keeps
+		// producing corrupted output even off the streaming parser path, so
+		// recovery should still exhaust its attempts and fail safe.
+		jsonResp := `{"choices":[{"index":0,"message":{"role":"assistant","content":"<|tool_call>call:read{path:<|\"|>x.html<|\"|>}<tool_call|>"},"finish_reason":"stop"}]}`
+		return textResponse("application/json", jsonResp), nil
 	})
 
 	respChan, _, err := b.Chat(context.Background(), models.ChatRequest{
