@@ -42,17 +42,23 @@ func (h *OpenAIChatCompletionsHandler) ServeHTTP(w http.ResponseWriter, r *http.
 
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
+		log.Printf("OpenAI chat request: failed to read request body: %v", err)
+		h.logInvalidRequest(startTime, "", fmt.Sprintf("failed to read request body: %v", err))
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
 
 	var req models.OpenAIChatRequest
 	if err := json.Unmarshal(bodyBytes, &req); err != nil {
+		log.Printf("OpenAI chat request: invalid request body: %v\nBody: %s", err, string(bodyBytes))
+		h.logInvalidRequest(startTime, string(bodyBytes), fmt.Sprintf("invalid request body: %v", err))
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 	var rawReq map[string]json.RawMessage
 	if err := json.Unmarshal(bodyBytes, &rawReq); err != nil || rawReq == nil {
+		log.Printf("OpenAI chat request: invalid request body: %v\nBody: %s", err, string(bodyBytes))
+		h.logInvalidRequest(startTime, string(bodyBytes), fmt.Sprintf("invalid request body: %v", err))
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -399,6 +405,30 @@ func (h *OpenAIChatCompletionsHandler) logRequest(startTime time.Time, model str
 
 	if err := h.db.Log(entry); err != nil {
 		log.Printf("Failed to log OpenAI request: %v", err)
+	}
+}
+
+// logInvalidRequest persists a request that was rejected before it could be parsed
+// into a ChatRequest (unreadable body or malformed JSON), so it's still visible in
+// the request log instead of vanishing silently.
+func (h *OpenAIChatCompletionsHandler) logInvalidRequest(startTime time.Time, frontendReq string, errMsg string) {
+	entry := database.LogEntry{
+		Timestamp:   startTime,
+		Endpoint:    "/v1/chat/completions",
+		Method:      "POST",
+		StatusCode:  http.StatusBadRequest,
+		LatencyMs:   time.Since(startTime).Milliseconds(),
+		BackendType: h.config.Backend.Type,
+		Error:       errMsg,
+		FrontendURL: fmt.Sprintf("http://%s:%d/v1/chat/completions",
+			h.config.Server.Host,
+			h.config.Server.Port,
+		),
+		FrontendRequest: frontendReq,
+	}
+
+	if err := h.db.Log(entry); err != nil {
+		log.Printf("Failed to log invalid OpenAI request: %v", err)
 	}
 }
 
