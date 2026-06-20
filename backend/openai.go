@@ -21,17 +21,48 @@ type OpenAIBackend struct {
 	endpoint         string
 	client           *http.Client
 	forcePromptCache bool
+	gemma4FixEnabled bool
 }
 
 // NewOpenAIBackend creates a new OpenAI backend
-func NewOpenAIBackend(endpoint string, timeout int, forcePromptCache bool) *OpenAIBackend {
+func NewOpenAIBackend(endpoint string, timeout int, forcePromptCache bool, gemma4FixEnabled bool) *OpenAIBackend {
 	return &OpenAIBackend{
 		endpoint:         endpoint,
 		forcePromptCache: forcePromptCache,
+		gemma4FixEnabled: gemma4FixEnabled,
 		client: &http.Client{
 			Timeout: time.Duration(timeout) * time.Second,
 		},
 	}
+}
+
+// postChatCompletion POSTs an already-marshaled chat completion request body
+// to the backend's /v1/chat/completions endpoint and validates the status
+// code, recording the raw response on failure. Shared by the normal Chat()
+// call path and, when gemma_4_fix is enabled, by its retry/nudge follow-up
+// requests (see gemma4_fix.go).
+func (o *OpenAIBackend) postChatCompletion(ctx context.Context, data []byte, metadata *BackendMetadata) (*http.Response, error) {
+	url := o.endpoint + "/v1/chat/completions"
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := o.client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		metadata.RawResponse = string(body)
+		return nil, fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	return resp, nil
 }
 
 // Generate handles text generation requests by translating to OpenAI format
@@ -393,26 +424,10 @@ func (o *OpenAIBackend) Chat(ctx context.Context, req models.ChatRequest) (<-cha
 	metadata.RawRequest = string(data)
 	metadata.URL = o.endpoint + "/v1/chat/completions"
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", metadata.URL, bytes.NewReader(data))
+	resp, err := o.postChatCompletion(ctx, data, metadata)
 	if err != nil {
 		close(respChan)
-		return respChan, metadata, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := o.client.Do(httpReq)
-	if err != nil {
-		close(respChan)
-		return respChan, metadata, fmt.Errorf("request failed: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		metadata.RawResponse = string(body)
-		close(respChan)
-		return respChan, metadata, fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode, string(body))
+		return respChan, metadata, err
 	}
 
 	// Handle streaming response
@@ -420,9 +435,12 @@ func (o *OpenAIBackend) Chat(ctx context.Context, req models.ChatRequest) (<-cha
 		defer resp.Body.Close()
 		defer close(respChan)
 
-		if req.Stream {
+		switch {
+		case req.Stream && o.gemma4FixEnabled:
+			o.handleStreamingChatGemma4Fix(ctx, resp.Body, respChan, req.Model, metadata, req, convertedMessages)
+		case req.Stream:
 			o.handleStreamingChat(ctx, resp.Body, respChan, req.Model, metadata)
-		} else {
+		default:
 			o.handleNonStreamingChat(resp.Body, respChan, req.Model, metadata)
 		}
 	}()

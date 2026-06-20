@@ -332,6 +332,22 @@ mode = "last"
 mode = "always"
 ```
 
+#### Gemma 4 Fix
+- `enabled`: Enable the Gemma 4 streaming-corruption mitigation (default: `false`)
+
+**Behavior:**
+- Self-contained, removable mitigation for two known bugs in vLLM's `gemma4` tool-call and reasoning parsers, only relevant when `backend.type = "openai"` and the backend is vLLM serving Gemma 4 with `--tool-call-parser gemma4 --reasoning-parser gemma4`
+- Detects when vLLM's tool-call parser leaks raw control-token tool-call syntax into the response `content` field instead of producing a structured `tool_calls` delta, and transparently retries (or sends a short internal follow-up turn if real content already streamed to the client) so the client never sees the corrupted text
+- Also strips leaked `<|channel>thought ... <channel|>` reasoning-channel wrapper tokens from streamed content
+- Applies only to the streaming chat path (`/api/chat` and `/v1/chat/completions`); does not affect `/api/generate` or the Ollama backend
+- Disabled by default; turning it on does not change behavior for any other model or backend
+
+**Example Configuration:**
+```toml
+[gemma_4_fix]
+enabled = true
+```
+
 ## Usage
 
 ### Start the Server

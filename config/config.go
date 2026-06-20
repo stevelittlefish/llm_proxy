@@ -15,6 +15,7 @@ type Config struct {
 	RequestSanitization RequestSanitizationConfig `toml:"request_sanitization"`
 	ChatTextInjection   ChatTextInjectionConfig   `toml:"chat_text_injection"`
 	StreamOverride      StreamOverrideConfig      `toml:"stream_override"`
+	Gemma4Fix           Gemma4FixConfig           `toml:"gemma_4_fix"`
 }
 
 // ServerConfig holds the server settings
@@ -65,6 +66,14 @@ type ChatTextInjectionConfig struct {
 // requests regardless of what the client asked for.
 type StreamOverrideConfig struct {
 	Mode string `toml:"mode"` // "passthrough", "always", or "never"
+}
+
+// Gemma4FixConfig controls the self-contained mitigation for known Gemma 4 +
+// vLLM streaming corruption bugs (leaked tool-call control tokens and leaked
+// reasoning-channel tokens in the content field). Only relevant when
+// backend.type = "openai". See docs/ for background.
+type Gemma4FixConfig struct {
+	Enabled bool `toml:"enabled"`
 }
 
 // Load reads and parses the configuration file

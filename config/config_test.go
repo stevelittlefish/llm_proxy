@@ -186,6 +186,41 @@ endpoint = "http://localhost:11434"
 	}
 }
 
+func TestLoadGemma4FixConfig(t *testing.T) {
+	path := writeTestConfig(t, `
+[backend]
+type = "openai"
+endpoint = "http://localhost:8008"
+
+[gemma_4_fix]
+enabled = true
+`)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.Gemma4Fix.Enabled {
+		t.Fatal("Gemma4Fix.Enabled = false, want true")
+	}
+}
+
+func TestLoadDefaultsGemma4FixDisabled(t *testing.T) {
+	path := writeTestConfig(t, `
+[backend]
+type = "openai"
+endpoint = "http://localhost:8008"
+`)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Gemma4Fix.Enabled {
+		t.Fatal("Gemma4Fix.Enabled = true, want false (default off)")
+	}
+}
+
 func writeTestConfig(t *testing.T, content string) string {
 	t.Helper()
 

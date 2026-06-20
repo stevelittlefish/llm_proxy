@@ -82,9 +82,12 @@ func main() {
 
 	switch cfg.Backend.Type {
 	case "openai":
-		backendInstance = backend.NewOpenAIBackend(cfg.Backend.Endpoint, cfg.Backend.Timeout, cfg.BackendOpenAI.ForcePromptCache)
+		backendInstance = backend.NewOpenAIBackend(cfg.Backend.Endpoint, cfg.Backend.Timeout, cfg.BackendOpenAI.ForcePromptCache, cfg.Gemma4Fix.Enabled)
 		if cfg.BackendOpenAI.ForcePromptCache {
 			log.Printf("OpenAI backend: prompt caching enabled")
+		}
+		if cfg.Gemma4Fix.Enabled {
+			log.Printf("OpenAI backend: gemma_4_fix enabled (Gemma 4 streaming-corruption mitigation)")
 		}
 	case "ollama":
 		backendInstance = backend.NewOllamaBackend(cfg.Backend.Endpoint, cfg.Backend.Timeout)

@@ -41,3 +41,11 @@ mode = "last"
 # "always" always asks the backend to stream
 # "never" always asks the backend for a single non-streamed response
 mode = "passthrough"
+
+[gemma_4_fix]
+# Self-contained mitigation for known Gemma 4 + vLLM streaming corruption bugs:
+# leaked tool-call control tokens and leaked reasoning-channel tokens showing
+# up in the content field instead of being handled correctly. Only relevant
+# when backend.type = "openai" and serving Gemma 4 via vLLM's gemma4
+# tool-call/reasoning parsers. See docs/ for background.
+enabled = false

@@ -14,7 +14,7 @@ import (
 
 func TestOpenAIBackendChatTranslatesRequestAndNonStreamingResponse(t *testing.T) {
 	var gotReq models.OpenAIChatRequest
-	b := NewOpenAIBackend("http://backend.test", 10, true)
+	b := NewOpenAIBackend("http://backend.test", 10, true, false)
 	b.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Path != "/v1/chat/completions" {
 			t.Fatalf("path = %q, want /v1/chat/completions", r.URL.Path)
@@ -72,7 +72,7 @@ func TestOpenAIBackendChatTranslatesRequestAndNonStreamingResponse(t *testing.T)
 
 func TestOpenAIBackendChatPreservesRawOpenAIFields(t *testing.T) {
 	var gotReq map[string]json.RawMessage
-	b := NewOpenAIBackend("http://backend.test", 10, true)
+	b := NewOpenAIBackend("http://backend.test", 10, true, false)
 	b.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
 			t.Fatalf("Decode() error = %v", err)
@@ -126,7 +126,7 @@ func TestOpenAIBackendChatPreservesRawOpenAIFields(t *testing.T) {
 }
 
 func TestOpenAIBackendStreamingChatAccumulatesToolCalls(t *testing.T) {
-	b := NewOpenAIBackend("http://backend.test", 10, false)
+	b := NewOpenAIBackend("http://backend.test", 10, false, false)
 	b.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		body := strings.Join([]string{
 			`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"lookup","arguments":"{\"ci"}}]}}]}`,
@@ -175,7 +175,7 @@ func TestOpenAIBackendStreamingChatAccumulatesToolCalls(t *testing.T) {
 }
 
 func TestOpenAIBackendStreamingChatCapturesUsageAfterFinish(t *testing.T) {
-	b := NewOpenAIBackend("http://backend.test", 10, false)
+	b := NewOpenAIBackend("http://backend.test", 10, false, false)
 	b.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		body := strings.Join([]string{
 			`data: {"choices":[{"delta":{"content":"pong"},"finish_reason":null}]}`,
