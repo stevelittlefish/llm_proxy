@@ -118,6 +118,8 @@ func main() {
 		"PromptCacheEnabled":   cfg.BackendOpenAI.ForcePromptCache,
 		"MaxTokensPolicy":      cfg.RequestSanitization.MaxTokensPolicy,
 		"MaxTokensLimit":       cfg.RequestSanitization.MaxTokensLimit,
+		"StreamOverrideMode":   cfg.StreamOverride.Mode,
+		"Gemma4FixEnabled":     cfg.Gemma4Fix.Enabled,
 		"TextInjectionEnabled": cfg.ChatTextInjection.Enabled,
 		"TextInjectionText":    cfg.ChatTextInjection.Text,
 		"TextInjectionMode":    cfg.ChatTextInjection.Mode,

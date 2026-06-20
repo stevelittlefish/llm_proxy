@@ -66,33 +66,71 @@
             padding-bottom: 10px;
             border-bottom: 2px solid #ecf0f1;
         }
+        .config-groups {
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+        .config-group {
+            border: 1px solid #e0e4e8;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        .config-group-title {
+            background: #eaf1fb;
+            color: #2c6fad;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            padding: 7px 14px;
+            border-bottom: 1px solid #d0dcea;
+        }
         .info-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 15px;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 0;
         }
         .info-item {
-            padding: 15px;
+            padding: 12px 16px;
             background: #f8f9fa;
-            border-radius: 6px;
-            border-left: 4px solid #3498db;
+            border-right: 1px solid #e8ecf0;
+            border-bottom: 1px solid #e8ecf0;
+        }
+        .info-item:last-child {
+            border-right: none;
+        }
+        .info-item.full-width {
+            grid-column: 1 / -1;
+            border-right: none;
         }
         .info-label {
             font-weight: 600;
             color: #7f8c8d;
-            font-size: 12px;
+            font-size: 11px;
             text-transform: uppercase;
-            margin-bottom: 8px;
+            letter-spacing: 0.05em;
+            margin-bottom: 5px;
         }
         .info-value {
             color: #2c3e50;
-            font-size: 16px;
+            font-size: 15px;
             word-break: break-word;
             font-family: "Courier New", monospace;
         }
         .info-value.text {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
         }
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .badge-on  { background: #d4edda; color: #155724; }
+        .badge-off { background: #f8d7da; color: #721c24; }
+        .badge-neutral { background: #e2e8f0; color: #4a5568; }
         .endpoints {
             background: #f8f9fa;
             padding: 20px;
@@ -166,39 +204,95 @@
 
         <div class="section">
             <h2>📊 Configuration</h2>
-            <div class="info-grid">
-                <div class="info-item">
-                    <div class="info-label">Backend Type</div>
-                    <div class="info-value text">{{.BackendType}}</div>
-                </div>
-                <div class="info-item">
-                    <div class="info-label">Backend Endpoint</div>
-                    <div class="info-value">{{.BackendEndpoint}}</div>
-                </div>
-                <div class="info-item">
-                    <div class="info-label">Timeout</div>
-                    <div class="info-value text">{{.Timeout}} seconds</div>
-                </div>
-                {{if .ToolBlacklist}}
-                <div class="info-item" style="grid-column: 1 / -1;">
-                    <div class="info-label">Tool Blacklist</div>
-                    <div class="info-value text">
-                        {{range $index, $tool := .ToolBlacklist}}{{if $index}}, {{end}}{{$tool}}{{end}}
+            <div class="config-groups">
+
+                <!-- Backend -->
+                <div class="config-group">
+                    <div class="config-group-title">Backend</div>
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <div class="info-label">Type</div>
+                            <div class="info-value text">{{.BackendType}}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Endpoint</div>
+                            <div class="info-value">{{.BackendEndpoint}}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Timeout</div>
+                            <div class="info-value text">{{.Timeout}}s</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Stream Override</div>
+                            <div class="info-value text">{{.StreamOverrideMode}}</div>
+                        </div>
+                        {{if eq .BackendType "openai"}}
+                        <div class="info-item">
+                            <div class="info-label">Force Prompt Cache</div>
+                            <div class="info-value text">
+                                {{if .PromptCacheEnabled}}<span class="badge badge-on">on</span>{{else}}<span class="badge badge-off">off</span>{{end}}
+                            </div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Gemma 4 Fix</div>
+                            <div class="info-value text">
+                                {{if .Gemma4FixEnabled}}<span class="badge badge-on">enabled</span>{{else}}<span class="badge badge-neutral">disabled</span>{{end}}
+                            </div>
+                        </div>
+                        {{end}}
                     </div>
                 </div>
-                {{end}}
-                {{if ne .MaxTokensPolicy "preserve"}}
-                <div class="info-item" style="grid-column: 1 / -1;">
-                    <div class="info-label">Max Tokens Policy</div>
-                    <div class="info-value text">{{.MaxTokensPolicy}}{{if eq .MaxTokensPolicy "drop_above"}} {{.MaxTokensLimit}}{{end}}</div>
+
+                <!-- Server -->
+                <div class="config-group">
+                    <div class="config-group-title">Server</div>
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <div class="info-label">Listen Address</div>
+                            <div class="info-value">{{.ServerHost}}:{{.ServerPort}}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">CORS</div>
+                            <div class="info-value text">
+                                {{if .EnableCORS}}<span class="badge badge-on">enabled</span>{{else}}<span class="badge badge-neutral">disabled</span>{{end}}
+                            </div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Database</div>
+                            <div class="info-value">{{.DatabasePath}}</div>
+                        </div>
+                    </div>
                 </div>
-                {{end}}
-                {{if .TextInjectionEnabled}}
-                <div class="info-item" style="grid-column: 1 / -1;">
-                    <div class="info-label">Chat Text Injection ({{.TextInjectionMode}})</div>
-                    <div class="info-value text">{{.TextInjectionText}}</div>
+
+                <!-- Request Handling -->
+                <div class="config-group">
+                    <div class="config-group-title">Request Handling</div>
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <div class="info-label">Max Tokens Policy</div>
+                            <div class="info-value text">{{.MaxTokensPolicy}}{{if eq .MaxTokensPolicy "drop_above"}} (limit: {{.MaxTokensLimit}}){{end}}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Text Injection</div>
+                            <div class="info-value text">
+                                {{if .TextInjectionEnabled}}<span class="badge badge-on">on</span> ({{.TextInjectionMode}}){{else}}<span class="badge badge-neutral">disabled</span>{{end}}
+                            </div>
+                        </div>
+                        {{if .ToolBlacklist}}
+                        <div class="info-item full-width">
+                            <div class="info-label">Tool Blacklist</div>
+                            <div class="info-value text">{{range $i, $t := .ToolBlacklist}}{{if $i}}, {{end}}{{$t}}{{end}}</div>
+                        </div>
+                        {{end}}
+                        {{if .TextInjectionEnabled}}
+                        <div class="info-item full-width">
+                            <div class="info-label">Injected Text</div>
+                            <div class="info-value text">{{.TextInjectionText}}</div>
+                        </div>
+                        {{end}}
+                    </div>
                 </div>
-                {{end}}
+
             </div>
         </div>
 
