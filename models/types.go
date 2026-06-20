@@ -2,6 +2,8 @@ package models
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 )
 
@@ -57,6 +59,51 @@ type Message struct {
 	Thinking   string        `json:"thinking,omitempty"`
 	ToolCalls  []interface{} `json:"tool_calls,omitempty"`
 	ToolCallID string        `json:"tool_call_id,omitempty"`
+}
+
+// UnmarshalJSON accepts content as either a plain string or an OpenAI-style
+// content-parts array (e.g. [{"type":"text","text":"..."}]), which some
+// clients send even for text-only messages. Non-text parts (e.g. images) are
+// dropped since this proxy has no vision support; text parts are concatenated.
+func (m *Message) UnmarshalJSON(data []byte) error {
+	type messageAlias Message
+	aux := struct {
+		Content json.RawMessage `json:"content"`
+		*messageAlias
+	}{
+		messageAlias: (*messageAlias)(m),
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	if len(aux.Content) == 0 || string(aux.Content) == "null" {
+		m.Content = ""
+		return nil
+	}
+
+	var asString string
+	if err := json.Unmarshal(aux.Content, &asString); err == nil {
+		m.Content = asString
+		return nil
+	}
+
+	var parts []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(aux.Content, &parts); err != nil {
+		return fmt.Errorf("content: %w", err)
+	}
+	var sb strings.Builder
+	for _, p := range parts {
+		if p.Type != "" && p.Type != "text" {
+			continue
+		}
+		sb.WriteString(p.Text)
+	}
+	m.Content = sb.String()
+	return nil
 }
 
 // ChatResponse represents an Ollama chat response
