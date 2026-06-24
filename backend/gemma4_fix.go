@@ -9,6 +9,7 @@ import (
 	"log"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"llm_proxy/models"
 )
@@ -110,6 +111,15 @@ func (f *gemma4ContentFilter) Feed(delta string) string {
 			safeLen := len(rest) - gemma4HoldbackLen
 			if safeLen < 0 {
 				safeLen = 0
+			}
+			// Never cut in the middle of a multi-byte UTF-8 rune: snap the
+			// boundary back to a rune start so a partial trailing rune is held
+			// back whole rather than forwarded as invalid UTF-8. Otherwise a
+			// downstream JSON decoder turns the orphaned bytes into U+FFFD
+			// replacement characters (a 3-byte glyph split E2|9C A6 surfaces as
+			// three "" boxes). Holding back a few extra bytes is harmless.
+			for safeLen > 0 && safeLen < len(rest) && !utf8.RuneStart(rest[safeLen]) {
+				safeLen--
 			}
 			out.WriteString(rest[:safeLen])
 			f.pending.WriteString(rest[safeLen:])

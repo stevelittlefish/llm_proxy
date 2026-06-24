@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"llm_proxy/models"
 )
@@ -52,6 +53,37 @@ func TestGemma4ContentFilterDetectsToolCallMarkerAcrossChunks(t *testing.T) {
 	}
 	if !strings.Contains(f.Trapped(), "<|tool_call>") {
 		t.Fatalf("Trapped() = %q, want suppressed marker text captured for logging", f.Trapped())
+	}
+}
+
+// TestGemma4ContentFilterDoesNotSplitUTF8Runes guards the holdback boundary: a
+// multi-byte rune that lands on it must be held back whole, not byte-sliced. The
+// filter forwards each safe chunk as its own SSE event (JSON-encoded), so a chunk
+// ending or starting mid-rune becomes a U+FFFD replacement character downstream —
+// the "Cinder␦␦␦s" corruption. Every forwarded chunk must therefore be valid
+// UTF-8 on its own, and the stream must stay lossless.
+func TestGemma4ContentFilterDoesNotSplitUTF8Runes(t *testing.T) {
+	const sym = "✦" // U+2726 — 3 bytes: E2 9C A6
+	// Size the content so the holdback cut (len - gemma4HoldbackLen) falls inside
+	// the symbol: place gemma4HoldbackLen-1 trailing bytes after it.
+	content := "Cinder " + sym + strings.Repeat("x", gemma4HoldbackLen-1)
+
+	f := &gemma4ContentFilter{}
+	forwarded := f.Feed(content)
+
+	// The forwarded chunk is sent as a standalone SSE event; a partial trailing
+	// rune in it gets mangled to U+FFFD by the next JSON encode/decode.
+	if !utf8.ValidString(forwarded) {
+		t.Fatalf("forwarded chunk is not valid UTF-8 (rune split across holdback): % x", forwarded)
+	}
+
+	// Nothing is dropped: Feed + Flush reconstruct the original exactly.
+	whole := forwarded + f.Flush()
+	if whole != content {
+		t.Fatalf("filter was lossy: got %q, want %q", whole, content)
+	}
+	if f.Suspect() {
+		t.Fatal("Suspect() = true, want false (no markers present)")
 	}
 }
 
