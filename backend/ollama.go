@@ -216,5 +216,50 @@ func (o *OllamaBackend) ListModels(ctx context.Context) (models.ModelsResponse, 
 		return models.ModelsResponse{}, fmt.Errorf("failed to decode response: %w", err)
 	}
 
+	for i := range modelsResp.Models {
+		if modelsResp.Models[i].ContextLength == 0 {
+			modelsResp.Models[i].ContextLength = modelsResp.Models[i].Details.ContextLength
+		}
+		if modelsResp.Models[i].Name == "" {
+			modelsResp.Models[i].Name = modelsResp.Models[i].Model
+		}
+		if modelsResp.Models[i].Model == "" {
+			modelsResp.Models[i].Model = modelsResp.Models[i].Name
+		}
+	}
+
 	return modelsResp, nil
+}
+
+func (o *OllamaBackend) ShowModel(ctx context.Context, model string) (models.ShowResponse, error) {
+	data, err := json.Marshal(map[string]string{"model": model})
+	if err != nil {
+		return models.ShowResponse{}, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", o.endpoint+"/api/show", bytes.NewReader(data))
+	if err != nil {
+		return models.ShowResponse{}, fmt.Errorf("failed to create request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := o.client.Do(httpReq)
+	if err != nil {
+		return models.ShowResponse{}, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return models.ShowResponse{}, fmt.Errorf("failed to read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return models.ShowResponse{}, fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var showResp models.ShowResponse
+	if err := json.Unmarshal(body, &showResp); err != nil {
+		return models.ShowResponse{}, fmt.Errorf("failed to decode response: %w", err)
+	}
+	return showResp, nil
 }

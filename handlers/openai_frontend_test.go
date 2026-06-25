@@ -47,12 +47,17 @@ func (fakeChatBackend) ListModels(context.Context) (models.ModelsResponse, error
 	return models.ModelsResponse{
 		Models: []models.ModelInfo{
 			{
-				Name:       "test-model",
-				Model:      "test-model",
-				ModifiedAt: time.Unix(100, 0),
+				Name:          "test-model",
+				Model:         "test-model",
+				ModifiedAt:    time.Unix(100, 0),
+				ContextLength: 32768,
 			},
 		},
 	}, nil
+}
+
+func (fakeChatBackend) ShowModel(context.Context, string) (models.ShowResponse, error) {
+	return models.ShowResponse{}, nil
 }
 
 type recordingChatBackend struct {
@@ -79,6 +84,10 @@ func (b *recordingChatBackend) Chat(ctx context.Context, req models.ChatRequest)
 
 func (b *recordingChatBackend) ListModels(context.Context) (models.ModelsResponse, error) {
 	return models.ModelsResponse{}, nil
+}
+
+func (b *recordingChatBackend) ShowModel(context.Context, string) (models.ShowResponse, error) {
+	return models.ShowResponse{}, nil
 }
 
 type toolCallChatBackend struct {
@@ -127,6 +136,10 @@ func (b toolCallChatBackend) ListModels(context.Context) (models.ModelsResponse,
 	return models.ModelsResponse{}, nil
 }
 
+func (b toolCallChatBackend) ShowModel(context.Context, string) (models.ShowResponse, error) {
+	return models.ShowResponse{}, nil
+}
+
 type usageChatBackend struct{}
 
 func (usageChatBackend) Generate(context.Context, models.GenerateRequest) (<-chan models.GenerateResponse, *backend.BackendMetadata, error) {
@@ -162,6 +175,10 @@ func (usageChatBackend) Chat(ctx context.Context, req models.ChatRequest) (<-cha
 
 func (usageChatBackend) ListModels(context.Context) (models.ModelsResponse, error) {
 	return models.ModelsResponse{}, nil
+}
+
+func (usageChatBackend) ShowModel(context.Context, string) (models.ShowResponse, error) {
+	return models.ShowResponse{}, nil
 }
 
 func TestOpenAIChatCompletionsHandler(t *testing.T) {
@@ -486,5 +503,11 @@ func TestOpenAIModelsHandler(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"id":"test-model"`) {
 		t.Fatalf("response does not include test-model: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"max_model_len":32768`) {
+		t.Fatalf("response does not include max_model_len: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"context_length":32768`) {
+		t.Fatalf("response does not include context_length: %s", rec.Body.String())
 	}
 }

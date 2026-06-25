@@ -57,6 +57,10 @@ func (s *sanitizationSpyBackend) ListModels(context.Context) (models.ModelsRespo
 	return models.ModelsResponse{}, nil
 }
 
+func (s *sanitizationSpyBackend) ShowModel(context.Context, string) (models.ShowResponse, error) {
+	return models.ShowResponse{}, nil
+}
+
 func TestRequestSanitizationDropsExcessiveMaxTokens(t *testing.T) {
 	tests := []struct {
 		name     string

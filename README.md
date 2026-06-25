@@ -12,6 +12,8 @@ The main motivation for creating this was to get the Home Assistant Ollama integ
 - **Streaming Support** - Full support for streaming responses with minimal latency
 - **Request/Response Logging** - All interactions logged to SQLite with timestamps, latency, and error tracking
 - **Web UI** - Built-in interface for viewing logs, request/response details, and configuration
+- **JSON Logs API** - Query logged frontend/backend requests and responses from `/api/logs`
+- **Model Metadata Passthrough** - Preserves upstream context-window metadata such as `max_model_len` and `details.context_length`
 - **Text Injection** - Automatically inject text into user messages (disabled by default) for example "/nothink" to disable thinking
 - **Tool Blacklist** - Filter out specific tools from chat requests before forwarding to the backend
 - **Request Sanitization** - Drop problematic maximum-token parameters from incoming requests
@@ -459,6 +461,8 @@ The proxy implements the following Ollama API endpoints:
 - `GET /api/tags` - List available models
 - `POST /api/show` - Show model information
 
+Model listing and show responses preserve upstream metadata where available, including context length fields used by OpenAI- and Ollama-compatible clients.
+
 ### OpenAI-Compatible Endpoints
 
 The proxy implements the following basic OpenAI API endpoints:
@@ -471,9 +475,12 @@ The proxy implements the following basic OpenAI API endpoints:
 - `GET /` - Home page with configuration overview
 - `GET /logs` - Paginated list of all requests/responses
 - `GET /logs/details?id=<id>` - Detailed view of a specific request
+- `GET /api/logs` - JSON list of logged requests; supports filters such as `limit`, `offset`, `model`, `endpoint`, `backend_type`, `status`, `errors_only`, `since`, `until`, `q`, `order`, and `bodies`
+- `GET /api/logs/{id}` - JSON detail for one logged request, always including frontend/backend request and response bodies
+- `GET /api/logs?id=<id>` - Query-parameter form of the same JSON detail endpoint
 - `GET /health` - Health check endpoint (returns "OK")
 
-The web interface provides an easy way to browse logs, inspect request/response details, and monitor the proxy's configuration without needing direct database access.
+The web interface provides an easy way to browse logs, inspect request/response details, and monitor the proxy's configuration without needing direct database access. The JSON logs API exposes the same stored request data for debugging tools; see [docs/logs-api.md](docs/logs-api.md) for the full API reference.
 
 ## Backend Types
 
@@ -546,6 +553,7 @@ llm_proxy/
 │   ├── chat.go             # /api/chat handler
 │   ├── models.go           # /api/tags and /api/show handlers
 │   ├── openai_frontend.go  # /v1/chat/completions and /v1/models handlers
+│   ├── logs_api.go         # /api/logs JSON handlers
 │   ├── web.go              # Web UI handlers
 │   ├── static/             # Embedded static assets
 │   └── templates/          # HTML templates for web UI
@@ -634,4 +642,3 @@ I built this in Jan 2026 when I hadn't really used proper AI coding tools before
 Now it's June and I don't write code myself at work any more and rely heavily on Claude Code.  I did the latest batch of updates to this project using Codex and it was so quick and easy.
 
 Fingers crossed, in 6 months time I still have a job and my work hasn't been completely automated!
-

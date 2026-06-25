@@ -129,21 +129,121 @@ type ModelsResponse struct {
 
 // ModelInfo represents information about a model
 type ModelInfo struct {
-	Name       string       `json:"name"`
-	Model      string       `json:"model"` // Duplicate of Name for compatibility
-	ModifiedAt time.Time    `json:"modified_at"`
-	Size       int64        `json:"size"`
-	Digest     string       `json:"digest"`
-	Details    ModelDetails `json:"details,omitempty"`
+	Name          string           `json:"name"`
+	Model         string           `json:"model"` // Duplicate of Name for compatibility
+	ModifiedAt    time.Time        `json:"modified_at"`
+	Size          int64            `json:"size"`
+	Digest        string           `json:"digest"`
+	Details       ModelDetails     `json:"details,omitempty"`
+	Capabilities  []string         `json:"capabilities,omitempty"`
+	ContextLength int              `json:"-"`
+	OpenAI        *OpenAIModelInfo `json:"-"`
 }
 
 // ModelDetails contains detailed model information
 type ModelDetails struct {
+	ParentModel       string   `json:"parent_model,omitempty"`
 	Format            string   `json:"format"`
 	Family            string   `json:"family"`
 	Families          []string `json:"families"`
 	ParameterSize     string   `json:"parameter_size"`
 	QuantizationLevel string   `json:"quantization_level"`
+	ContextLength     int      `json:"context_length,omitempty"`
+	EmbeddingLength   int      `json:"embedding_length,omitempty"`
+}
+
+// OpenAIModelInfo contains OpenAI/vLLM model-list metadata that should survive
+// translation through the backend layer.
+type OpenAIModelInfo struct {
+	ID            string                 `json:"id"`
+	Object        string                 `json:"object,omitempty"`
+	Created       int64                  `json:"created,omitempty"`
+	OwnedBy       string                 `json:"owned_by,omitempty"`
+	MaxModelLen   int                    `json:"max_model_len,omitempty"`
+	ContextLength int                    `json:"context_length,omitempty"`
+	TopProvider   map[string]interface{} `json:"top_provider,omitempty"`
+	Root          string                 `json:"root,omitempty"`
+	Parent        interface{}            `json:"parent,omitempty"`
+}
+
+// ShowResponse represents an Ollama-compatible /api/show response. Extra holds
+// upstream fields the proxy does not model so they can still be passed through.
+type ShowResponse struct {
+	Modelfile    string                 `json:"modelfile,omitempty"`
+	Parameters   string                 `json:"parameters,omitempty"`
+	Template     string                 `json:"template,omitempty"`
+	Details      ModelDetails           `json:"details,omitempty"`
+	ModelInfo    map[string]interface{} `json:"model_info,omitempty"`
+	Tensors      []interface{}          `json:"tensors,omitempty"`
+	Capabilities []string               `json:"capabilities,omitempty"`
+	ModifiedAt   time.Time              `json:"modified_at,omitempty"`
+	Extra        map[string]interface{} `json:"-"`
+}
+
+// MarshalJSON merges pass-through fields from Extra with the modeled fields.
+func (s ShowResponse) MarshalJSON() ([]byte, error) {
+	data := make(map[string]interface{}, len(s.Extra)+8)
+	for k, v := range s.Extra {
+		data[k] = v
+	}
+
+	if s.Modelfile != "" {
+		data["modelfile"] = s.Modelfile
+	}
+	if s.Parameters != "" {
+		data["parameters"] = s.Parameters
+	}
+	if s.Template != "" {
+		data["template"] = s.Template
+	}
+	if !modelDetailsEmpty(s.Details) {
+		data["details"] = s.Details
+	}
+	if len(s.ModelInfo) > 0 {
+		data["model_info"] = s.ModelInfo
+	}
+	if len(s.Tensors) > 0 {
+		data["tensors"] = s.Tensors
+	}
+	if len(s.Capabilities) > 0 {
+		data["capabilities"] = s.Capabilities
+	}
+	if !s.ModifiedAt.IsZero() {
+		data["modified_at"] = s.ModifiedAt
+	}
+	return json.Marshal(data)
+}
+
+// UnmarshalJSON captures modeled fields and keeps any additional upstream keys.
+func (s *ShowResponse) UnmarshalJSON(data []byte) error {
+	type showAlias ShowResponse
+	var alias showAlias
+	if err := json.Unmarshal(data, &alias); err != nil {
+		return err
+	}
+
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	for _, k := range []string{"modelfile", "parameters", "template", "details", "model_info", "tensors", "capabilities", "modified_at"} {
+		delete(raw, k)
+	}
+
+	*s = ShowResponse(alias)
+	s.Extra = raw
+	return nil
+}
+
+func modelDetailsEmpty(d ModelDetails) bool {
+	return d.ParentModel == "" &&
+		d.Format == "" &&
+		d.Family == "" &&
+		len(d.Families) == 0 &&
+		d.ParameterSize == "" &&
+		d.QuantizationLevel == "" &&
+		d.ContextLength == 0 &&
+		d.EmbeddingLength == 0
 }
 
 // OpenAI API types

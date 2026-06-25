@@ -843,7 +843,15 @@ func (o *OpenAIBackend) ListModels(ctx context.Context) (models.ModelsResponse, 
 	// Try to parse OpenAI models response and convert to Ollama format
 	var openaiModels struct {
 		Data []struct {
-			ID string `json:"id"`
+			ID            string                 `json:"id"`
+			Object        string                 `json:"object"`
+			Created       int64                  `json:"created"`
+			OwnedBy       string                 `json:"owned_by"`
+			MaxModelLen   int                    `json:"max_model_len"`
+			ContextLength int                    `json:"context_length"`
+			TopProvider   map[string]interface{} `json:"top_provider"`
+			Root          string                 `json:"root"`
+			Parent        interface{}            `json:"parent"`
 		} `json:"data"`
 	}
 
@@ -865,14 +873,98 @@ func (o *OpenAIBackend) ListModels(ctx context.Context) (models.ModelsResponse, 
 	// Convert to Ollama format
 	var modelInfos []models.ModelInfo
 	for _, m := range openaiModels.Data {
+		contextLength := firstNonZero(m.MaxModelLen, m.ContextLength, topProviderContextLength(m.TopProvider))
+		created := time.Now()
+		if m.Created > 0 {
+			created = time.Unix(m.Created, 0)
+		}
+		object := m.Object
+		if object == "" {
+			object = "model"
+		}
+		ownedBy := m.OwnedBy
+		if ownedBy == "" {
+			ownedBy = "llm_proxy"
+		}
 		modelInfos = append(modelInfos, models.ModelInfo{
-			Name:       m.ID,
-			Model:      m.ID,
-			ModifiedAt: time.Now(),
-			Size:       0,
-			Digest:     "",
+			Name:          m.ID,
+			Model:         m.ID,
+			ModifiedAt:    created,
+			Size:          0,
+			Digest:        "",
+			ContextLength: contextLength,
+			Details: models.ModelDetails{
+				ContextLength: contextLength,
+			},
+			OpenAI: &models.OpenAIModelInfo{
+				ID:            m.ID,
+				Object:        object,
+				Created:       created.Unix(),
+				OwnedBy:       ownedBy,
+				MaxModelLen:   m.MaxModelLen,
+				ContextLength: m.ContextLength,
+				TopProvider:   m.TopProvider,
+				Root:          m.Root,
+				Parent:        m.Parent,
+			},
 		})
 	}
 
 	return models.ModelsResponse{Models: modelInfos}, nil
+}
+
+func (o *OpenAIBackend) ShowModel(ctx context.Context, model string) (models.ShowResponse, error) {
+	modelsResp, err := o.ListModels(ctx)
+	if err != nil {
+		return models.ShowResponse{}, err
+	}
+
+	var selected *models.ModelInfo
+	for i := range modelsResp.Models {
+		if modelsResp.Models[i].Name == model || modelsResp.Models[i].Model == model {
+			selected = &modelsResp.Models[i]
+			break
+		}
+	}
+	if selected == nil {
+		return models.ShowResponse{}, fmt.Errorf("model not found: %s", model)
+	}
+
+	modelInfo := map[string]interface{}{}
+	if selected.ContextLength > 0 {
+		modelInfo["context_length"] = selected.ContextLength
+	}
+	return models.ShowResponse{
+		Details: models.ModelDetails{
+			ContextLength: selected.ContextLength,
+		},
+		ModelInfo:  modelInfo,
+		ModifiedAt: selected.ModifiedAt,
+	}, nil
+}
+
+func firstNonZero(values ...int) int {
+	for _, v := range values {
+		if v != 0 {
+			return v
+		}
+	}
+	return 0
+}
+
+func topProviderContextLength(topProvider map[string]interface{}) int {
+	if topProvider == nil {
+		return 0
+	}
+	switch v := topProvider["context_length"].(type) {
+	case float64:
+		return int(v)
+	case int:
+		return v
+	case json.Number:
+		n, _ := v.Int64()
+		return int(n)
+	default:
+		return 0
+	}
 }

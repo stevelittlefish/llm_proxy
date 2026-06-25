@@ -25,4 +25,7 @@ type Backend interface {
 
 	// ListModels returns available models
 	ListModels(ctx context.Context) (models.ModelsResponse, error)
+
+	// ShowModel returns Ollama-compatible metadata for one model
+	ShowModel(ctx context.Context, model string) (models.ShowResponse, error)
 }

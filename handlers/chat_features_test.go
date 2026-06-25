@@ -56,6 +56,10 @@ func (s *spyChatBackend) ListModels(context.Context) (models.ModelsResponse, err
 	return models.ModelsResponse{}, nil
 }
 
+func (s *spyChatBackend) ShowModel(context.Context, string) (models.ShowResponse, error) {
+	return models.ShowResponse{}, nil
+}
+
 func TestChatFeatureParity(t *testing.T) {
 	tests := []struct {
 		name             string

@@ -126,6 +126,7 @@ func main() {
 	}
 
 	webHandler := handlers.NewWebHandler(db, homeData)
+	logsAPIHandler := handlers.NewLogsAPIHandler(db)
 
 	mux.Handle("/api/generate", generateHandler)
 	mux.Handle("/api/chat", chatHandler)
@@ -145,6 +146,8 @@ func main() {
 	mux.HandleFunc("/logs", webHandler.IndexHandler)
 	mux.HandleFunc("/logs/details", webHandler.DetailsHandler)
 	mux.HandleFunc("/logs/download", webHandler.DownloadHandler)
+	mux.Handle("/api/logs", logsAPIHandler)
+	mux.Handle("/api/logs/", logsAPIHandler)
 	mux.HandleFunc("/favicon.ico", webHandler.FaviconHandler)
 	mux.HandleFunc("/static/", webHandler.StaticHandler)
 

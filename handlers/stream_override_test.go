@@ -81,6 +81,10 @@ func (s *streamOverrideSpyBackend) ListModels(context.Context) (models.ModelsRes
 	return models.ModelsResponse{}, nil
 }
 
+func (s *streamOverrideSpyBackend) ShowModel(context.Context, string) (models.ShowResponse, error) {
+	return models.ShowResponse{}, nil
+}
+
 func TestStreamOverrideForcesBackendRequestStream(t *testing.T) {
 	tests := []struct {
 		name            string

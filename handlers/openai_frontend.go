@@ -476,10 +476,15 @@ func (h *OpenAIModelsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	}
 
 	type openAIModel struct {
-		ID      string `json:"id"`
-		Object  string `json:"object"`
-		Created int64  `json:"created"`
-		OwnedBy string `json:"owned_by"`
+		ID            string                 `json:"id"`
+		Object        string                 `json:"object"`
+		Created       int64                  `json:"created"`
+		OwnedBy       string                 `json:"owned_by"`
+		MaxModelLen   int                    `json:"max_model_len,omitempty"`
+		ContextLength int                    `json:"context_length,omitempty"`
+		TopProvider   map[string]interface{} `json:"top_provider,omitempty"`
+		Root          string                 `json:"root,omitempty"`
+		Parent        interface{}            `json:"parent,omitempty"`
 	}
 	response := struct {
 		Object string        `json:"object"`
@@ -493,11 +498,44 @@ func (h *OpenAIModelsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		if name == "" {
 			name = model.Model
 		}
+		object := "model"
+		created := model.ModifiedAt.Unix()
+		ownedBy := "llm_proxy"
+		maxModelLen := model.ContextLength
+		contextLength := model.ContextLength
+		var topProvider map[string]interface{}
+		var root string
+		var parent interface{}
+		if model.OpenAI != nil {
+			if model.OpenAI.Object != "" {
+				object = model.OpenAI.Object
+			}
+			if model.OpenAI.Created > 0 {
+				created = model.OpenAI.Created
+			}
+			if model.OpenAI.OwnedBy != "" {
+				ownedBy = model.OpenAI.OwnedBy
+			}
+			if model.OpenAI.MaxModelLen > 0 {
+				maxModelLen = model.OpenAI.MaxModelLen
+			}
+			if model.OpenAI.ContextLength > 0 {
+				contextLength = model.OpenAI.ContextLength
+			}
+			topProvider = model.OpenAI.TopProvider
+			root = model.OpenAI.Root
+			parent = model.OpenAI.Parent
+		}
 		response.Data = append(response.Data, openAIModel{
-			ID:      name,
-			Object:  "model",
-			Created: model.ModifiedAt.Unix(),
-			OwnedBy: "llm_proxy",
+			ID:            name,
+			Object:        object,
+			Created:       created,
+			OwnedBy:       ownedBy,
+			MaxModelLen:   maxModelLen,
+			ContextLength: contextLength,
+			TopProvider:   topProvider,
+			Root:          root,
+			Parent:        parent,
 		})
 	}
 

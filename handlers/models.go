@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 
 	"llm_proxy/backend"
-	"llm_proxy/models"
 )
 
 // ModelsHandler handles /api/tags requests
@@ -61,7 +61,8 @@ func (h *ShowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name string `json:"name"`
+		Name  string `json:"name"`
+		Model string `json:"model"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -69,11 +70,24 @@ func (h *ShowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Return basic model info
-	response := models.ModelInfo{
-		Name:   req.Name,
-		Size:   0,
-		Digest: "",
+	modelName := req.Model
+	if modelName == "" {
+		modelName = req.Name
+	}
+	if modelName == "" {
+		http.Error(w, "Missing model", http.StatusBadRequest)
+		return
+	}
+
+	response, err := h.backend.ShowModel(r.Context(), modelName)
+	if err != nil {
+		log.Printf("Failed to show model: %v", err)
+		status := http.StatusInternalServerError
+		if strings.Contains(err.Error(), "status code: 404") || strings.Contains(err.Error(), "model not found") {
+			status = http.StatusNotFound
+		}
+		http.Error(w, err.Error(), status)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")

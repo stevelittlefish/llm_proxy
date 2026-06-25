@@ -80,6 +80,7 @@ func (db *DB) initSchema() error {
 	CREATE INDEX IF NOT EXISTS idx_timestamp ON request(timestamp);
 	CREATE INDEX IF NOT EXISTS idx_endpoint ON request(endpoint);
 	CREATE INDEX IF NOT EXISTS idx_model ON request(model);
+	CREATE INDEX IF NOT EXISTS idx_status_code ON request(status_code);
 	`
 
 	_, err := db.conn.Exec(schema)
