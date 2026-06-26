@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -286,6 +287,16 @@ func parseGemma4NativeToolCalls(trapped string) ([]interface{}, bool) {
 	return toolCalls, true
 }
 
+// gemma4ArgKeyRe matches a plausible tool-argument name. Gemma's native arg keys
+// are always bare identifiers (command, code, old_string, new_string, path, …).
+// Anything else — a slab of code, a "key" carrying spaces, quotes or newlines — is
+// the tell that the model garbled its own wire format (e.g. it dropped a key's
+// label and dumped a raw value where the key should be, so the first ':' the parser
+// finds is one buried inside the value). Rejecting such a block (rather than
+// accepting a structurally-wrong tool call) lets the caller fall through to the
+// non-streaming retry, which does not reproduce the streaming corruption.
+var gemma4ArgKeyRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
 // parseGemma4ArgsBlock parses the args container that follows a native
 // Gemma 4 tool-call identifier, e.g.:
 //
@@ -313,6 +324,13 @@ func parseGemma4ArgsBlock(block string) (map[string]interface{}, bool) {
 		}
 		key := strings.TrimSpace(inner[:colonIdx])
 		rest := inner[colonIdx+1:]
+
+		// A "key" that isn't a bare identifier means the block is corrupt (the
+		// model garbled its wire format): reject so recovery can run, rather than
+		// emit a tool call with a code blob as a property name.
+		if !gemma4ArgKeyRe.MatchString(key) {
+			return nil, false
+		}
 
 		if !strings.HasPrefix(rest, gemma4ToolCallStringDelim) {
 			return nil, false

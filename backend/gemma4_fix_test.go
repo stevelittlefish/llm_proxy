@@ -510,6 +510,27 @@ func TestParseGemma4NativeToolCalls(t *testing.T) {
 			wantArgVal:   "print(f\"{x}\")\n",
 		},
 		{
+			name:         "edit with old_string/new_string/path (clean)",
+			trapped:      `<|tool_call>call:edit{old_string:<|"|>foo<|"|>,new_string:<|"|>bar<|"|>,path:<|"|>cmd/imp/main.go<|"|>}<tool_call|>`,
+			wantOK:       true,
+			wantFuncName: "edit",
+			wantArgKey:   "path",
+			wantArgVal:   "cmd/imp/main.go",
+		},
+		{
+			// Verbatim shape of production req #3963: Gemma dropped the
+			// `old_string:` key label, dumping raw Go code straight after `{`,
+			// and a stray delimiter landed mid-value (right after `TTY:`). The
+			// lenient parser used to accept this — treating the code blob as a
+			// property name and silently omitting `old_string` — and forward a
+			// structurally-wrong tool call that the client rejected on its
+			// schema, in an unrecoverable loop. It must now be rejected so the
+			// caller falls through to the non-streaming retry.
+			name:    "missing key label with stray delimiter (req 3963) is rejected",
+			trapped: "<|tool_call>call:edit{\tfmt.Fprintln(w, \"     imp                         (no args on a TTY:<|\"|>open the interactive UI)\")\n\treturn nil\n`<|\"|>,new_string:<|\"|>\treturn nil\n<|\"|>,path:<|\"|>cmd/imp/main.go<|\"|>}<tool_call|>",
+			wantOK:  false,
+		},
+		{
 			name:    "missing args block",
 			trapped: `<|tool_call>call:read<tool_call|>`,
 			wantOK:  false,
