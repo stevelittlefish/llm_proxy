@@ -181,6 +181,56 @@ func (usageChatBackend) ShowModel(context.Context, string) (models.ShowResponse,
 	return models.ShowResponse{}, nil
 }
 
+func TestOpenAIChatCompletionsHandlerPreservesMultimodalContentInBackendRequest(t *testing.T) {
+	db, err := database.New(filepath.Join(t.TempDir(), "llm_proxy.db"))
+	if err != nil {
+		t.Fatalf("database.New() error = %v", err)
+	}
+	defer db.Close()
+
+	cfg := &config.Config{
+		Server:  config.ServerConfig{Host: "127.0.0.1", Port: 11434},
+		Backend: config.BackendConfig{Type: "openai"},
+	}
+	backend := &recordingChatBackend{}
+	handler := NewOpenAIChatCompletionsHandler(backend, db, cfg)
+
+	body := `{"model":"gemma4-31b","messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"data:image/png;base64,abc"}}]}],"stream":true}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if len(backend.lastReq.Messages) != 1 {
+		t.Fatalf("messages len = %d, want 1", len(backend.lastReq.Messages))
+	}
+	if backend.lastReq.Messages[0].Content != "" {
+		t.Fatalf("flattened content = %q, want empty text view", backend.lastReq.Messages[0].Content)
+	}
+	if backend.lastReq.OpenAIRaw == nil {
+		t.Fatal("OpenAIRaw is nil")
+	}
+	var raw struct {
+		Messages []struct {
+			Content []struct {
+				Type     string `json:"type"`
+				ImageURL struct {
+					URL string `json:"url"`
+				} `json:"image_url"`
+			} `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(backend.lastReq.OpenAIRaw["messages"], &raw.Messages); err != nil {
+		t.Fatalf("raw messages lost multimodal content array: %v; json=%s", err, string(backend.lastReq.OpenAIRaw["messages"]))
+	}
+	if len(raw.Messages) != 1 || len(raw.Messages[0].Content) != 1 || raw.Messages[0].Content[0].Type != "image_url" || raw.Messages[0].Content[0].ImageURL.URL != "data:image/png;base64,abc" {
+		t.Fatalf("raw messages = %#v, want preserved image_url content", raw.Messages)
+	}
+}
+
 func TestOpenAIChatCompletionsHandler(t *testing.T) {
 	db, err := database.New(filepath.Join(t.TempDir(), "llm_proxy.db"))
 	if err != nil {

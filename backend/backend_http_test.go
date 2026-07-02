@@ -125,6 +125,55 @@ func TestOpenAIBackendChatPreservesRawOpenAIFields(t *testing.T) {
 	}
 }
 
+func TestOpenAIBackendChatPreservesMultimodalMessageContent(t *testing.T) {
+	var gotReq map[string]json.RawMessage
+	b := NewOpenAIBackend("http://backend.test", 10, false, false)
+	b.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
+			t.Fatalf("Decode() error = %v", err)
+		}
+		return jsonResponse(`{"choices":[{"message":{"role":"assistant","content":"pong"},"finish_reason":"stop"}]}`), nil
+	})
+
+	body := []byte(`{"model":"gemma4-31b","messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"data:image/png;base64,abc"}}]}]}`)
+	var openaiReq models.OpenAIChatRequest
+	if err := json.Unmarshal(body, &openaiReq); err != nil {
+		t.Fatalf("unmarshal OpenAI request: %v", err)
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil {
+		t.Fatalf("unmarshal raw request: %v", err)
+	}
+
+	respChan, meta, err := b.Chat(context.Background(), models.ChatRequest{
+		Model:     openaiReq.Model,
+		Messages:  openaiReq.Messages,
+		OpenAIRaw: raw,
+	})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	for range respChan {
+	}
+
+	var sent struct {
+		Messages []struct {
+			Content []struct {
+				Type     string `json:"type"`
+				ImageURL struct {
+					URL string `json:"url"`
+				} `json:"image_url"`
+			} `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(gotReq["messages"], &sent.Messages); err != nil {
+		t.Fatalf("backend messages lost content array: %v; messages=%s rawRequest=%s", err, string(gotReq["messages"]), meta.RawRequest)
+	}
+	if len(sent.Messages) != 1 || len(sent.Messages[0].Content) != 1 || sent.Messages[0].Content[0].Type != "image_url" || sent.Messages[0].Content[0].ImageURL.URL != "data:image/png;base64,abc" {
+		t.Fatalf("backend messages = %#v, want preserved image_url content", sent.Messages)
+	}
+}
+
 func TestOpenAIBackendStreamingChatAccumulatesToolCalls(t *testing.T) {
 	b := NewOpenAIBackend("http://backend.test", 10, false, false)
 	b.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {

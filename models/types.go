@@ -59,12 +59,25 @@ type Message struct {
 	Thinking   string        `json:"thinking,omitempty"`
 	ToolCalls  []interface{} `json:"tool_calls,omitempty"`
 	ToolCallID string        `json:"tool_call_id,omitempty"`
+
+	// RawContent preserves the original JSON value for OpenAI multimodal
+	// content arrays. Content remains the flattened text view used by Ollama
+	// compatibility, logging, and text-only features; MarshalJSON emits
+	// RawContent when present so OpenAI-compatible backends receive images.
+	RawContent json.RawMessage `json:"-"`
+}
+
+// SetContent replaces the text content and clears any preserved raw OpenAI
+// content value, because the raw value no longer represents this message.
+func (m *Message) SetContent(content string) {
+	m.Content = content
+	m.RawContent = nil
 }
 
 // UnmarshalJSON accepts content as either a plain string or an OpenAI-style
-// content-parts array (e.g. [{"type":"text","text":"..."}]), which some
-// clients send even for text-only messages. Non-text parts (e.g. images) are
-// dropped since this proxy has no vision support; text parts are concatenated.
+// content-parts array (e.g. [{"type":"text","text":"..."}]). For arrays,
+// Content is a flattened text view while RawContent preserves the original
+// value for lossless forwarding to OpenAI-compatible backends.
 func (m *Message) UnmarshalJSON(data []byte) error {
 	type messageAlias Message
 	aux := struct {
@@ -77,6 +90,7 @@ func (m *Message) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
+	m.RawContent = nil
 	if len(aux.Content) == 0 || string(aux.Content) == "null" {
 		m.Content = ""
 		return nil
@@ -87,6 +101,8 @@ func (m *Message) UnmarshalJSON(data []byte) error {
 		m.Content = asString
 		return nil
 	}
+
+	m.RawContent = append(m.RawContent[:0], aux.Content...)
 
 	var parts []struct {
 		Type string `json:"type"`
@@ -104,6 +120,37 @@ func (m *Message) UnmarshalJSON(data []byte) error {
 	}
 	m.Content = sb.String()
 	return nil
+}
+
+// MarshalJSON emits preserved raw content arrays when present, otherwise the
+// normal string content. This keeps OpenAI multimodal messages lossless without
+// changing the string-oriented internal API.
+func (m Message) MarshalJSON() ([]byte, error) {
+	content := json.RawMessage(nil)
+	if len(m.RawContent) > 0 && json.Valid(m.RawContent) {
+		content = m.RawContent
+	} else {
+		data, err := json.Marshal(m.Content)
+		if err != nil {
+			return nil, err
+		}
+		content = data
+	}
+
+	aux := struct {
+		Role       string          `json:"role"`
+		Content    json.RawMessage `json:"content"`
+		Thinking   string          `json:"thinking,omitempty"`
+		ToolCalls  []interface{}   `json:"tool_calls,omitempty"`
+		ToolCallID string          `json:"tool_call_id,omitempty"`
+	}{
+		Role:       m.Role,
+		Content:    content,
+		Thinking:   m.Thinking,
+		ToolCalls:  m.ToolCalls,
+		ToolCallID: m.ToolCallID,
+	}
+	return json.Marshal(aux)
 }
 
 // ChatResponse represents an Ollama chat response

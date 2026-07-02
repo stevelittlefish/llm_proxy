@@ -75,7 +75,7 @@ func applyChatTextInjection(req *models.ChatRequest, cfg *config.Config) {
 			if cfg.Server.Verbose {
 				log.Printf("[VERBOSE] Injecting text into existing system message: %q", injectionText)
 			}
-			req.Messages[systemIndex].Content = req.Messages[systemIndex].Content + " " + injectionText
+			req.Messages[systemIndex].SetContent(req.Messages[systemIndex].Content + " " + injectionText)
 			return
 		}
 
@@ -117,7 +117,7 @@ func applyChatTextInjection(req *models.ChatRequest, cfg *config.Config) {
 	if cfg.Server.Verbose {
 		log.Printf("[VERBOSE] Injecting text into %s user message (index %d): %q", mode, targetIndex, injectionText)
 	}
-	req.Messages[targetIndex].Content = req.Messages[targetIndex].Content + " " + injectionText
+	req.Messages[targetIndex].SetContent(req.Messages[targetIndex].Content + " " + injectionText)
 }
 
 func cloneMessages(messages []models.Message) []models.Message {

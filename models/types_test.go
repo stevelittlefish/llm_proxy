@@ -36,4 +36,49 @@ func TestPiAgentContentPartsPayload(t *testing.T) {
 	if len(req.Tools) != 4 {
 		t.Fatalf("expected 4 tools, got %d", len(req.Tools))
 	}
+
+	data, err := json.Marshal(req.Messages[1])
+	if err != nil {
+		t.Fatalf("marshal message failed: %v", err)
+	}
+	var remarshal struct {
+		Content []map[string]string `json:"content"`
+	}
+	if err := json.Unmarshal(data, &remarshal); err != nil {
+		t.Fatalf("remarshal content was not an array: %v; json=%s", err, string(data))
+	}
+	if len(remarshal.Content) != 1 || remarshal.Content[0]["type"] != "text" || remarshal.Content[0]["text"] != "hi" {
+		t.Fatalf("remarshal content = %#v, want original text part", remarshal.Content)
+	}
+}
+
+func TestMessagePreservesImageURLContentPart(t *testing.T) {
+	body := `{"role":"user","content":[{"type":"image_url","image_url":{"url":"data:image/png;base64,abc"}}]}`
+
+	var msg Message
+	if err := json.Unmarshal([]byte(body), &msg); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if msg.Content != "" {
+		t.Fatalf("flattened content = %q, want empty text view", msg.Content)
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	var got struct {
+		Content []struct {
+			Type     string `json:"type"`
+			ImageURL struct {
+				URL string `json:"url"`
+			} `json:"image_url"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("marshaled content was not preserved as an array: %v; json=%s", err, string(data))
+	}
+	if len(got.Content) != 1 || got.Content[0].Type != "image_url" || got.Content[0].ImageURL.URL != "data:image/png;base64,abc" {
+		t.Fatalf("marshaled content = %#v, want original image_url part", got.Content)
+	}
 }
