@@ -206,16 +206,7 @@ func contentText(c interface{}) string {
 	case string:
 		return v
 	case []interface{}:
-		// Content-parts array: concatenate text parts
-		var parts []string
-		for _, item := range v {
-			if part, ok := item.(map[string]interface{}); ok {
-				if t, ok := part["text"].(string); ok {
-					parts = append(parts, t)
-				}
-			}
-		}
-		return strings.Join(parts, "")
+		return contentSummary(v)
 	}
 	return ""
 }

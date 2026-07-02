@@ -397,13 +397,21 @@ func (h *OpenAIChatCompletionsHandler) logRequest(startTime time.Time, model str
 		prompt.WriteString(msg.Content)
 		prompt.WriteString("\n")
 	}
+	promptText := prompt.String()
+	if summary := marshalLogMessagesSummary(frontendReq); summary != "" {
+		promptText = summary
+	}
+	lastMessage := originalLastMessage
+	if summary := lastMessageSummaryFromRaw(frontendReq); summary != "" {
+		lastMessage = summary
+	}
 
 	entry := database.LogEntry{
 		Timestamp:   startTime,
 		Endpoint:    "/v1/chat/completions",
 		Method:      "POST",
 		Model:       model,
-		Prompt:      prompt.String(),
+		Prompt:      promptText,
 		Response:    response,
 		StatusCode:  statusCode,
 		LatencyMs:   time.Since(startTime).Milliseconds(),
@@ -419,7 +427,7 @@ func (h *OpenAIChatCompletionsHandler) logRequest(startTime time.Time, model str
 		FrontendResponse: frontendResp,
 		BackendRequest:   backendReq,
 		BackendResponse:  backendResp,
-		LastMessage:      originalLastMessage,
+		LastMessage:      lastMessage,
 	}
 
 	if err := h.db.Log(entry); err != nil {

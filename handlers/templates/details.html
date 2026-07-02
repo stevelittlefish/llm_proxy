@@ -198,6 +198,39 @@
             font-size: 12px;
             margin-bottom: 5px;
         }
+        .conversation-message {
+            padding: 12px;
+            margin-bottom: 12px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            border-left: 4px solid #bdc3c7;
+        }
+        .conversation-role {
+            font-weight: 700;
+            color: #34495e;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            font-size: 12px;
+        }
+        .conversation-text {
+            white-space: pre-wrap;
+            margin-bottom: 8px;
+        }
+        .conversation-image {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #dfe6e9;
+            border-radius: 6px;
+            background: #fff;
+            display: block;
+            margin: 8px 0;
+        }
+        .image-meta, .content-placeholder {
+            color: #7f8c8d;
+            font-family: "Courier New", monospace;
+            font-size: 12px;
+            margin-bottom: 6px;
+        }
     </style>
     <script>
         function toggleCollapse(id) {
@@ -316,13 +349,63 @@
             <h2>Prompt & Response</h2>
             <div class="info-item" style="margin-bottom: 15px;">
                 <div class="info-label">Prompt</div>
-                <div class="info-value preserve-newlines">{{.Prompt}}</div>
+                <div class="info-value preserve-newlines">{{.PromptDisplay}}</div>
             </div>
             <div class="info-item">
                 <div class="info-label">Response</div>
                 <div class="info-value preserve-newlines">{{.Response}}</div>
             </div>
         </div>
+
+        {{if .FrontendConversation}}
+        <div class="section">
+            <h2>Conversation (Frontend Request)</h2>
+            {{range .FrontendConversation}}
+            <div class="conversation-message">
+                <div class="conversation-role">{{.Role}}</div>
+                {{if .Parts}}
+                    {{range .Parts}}
+                        {{if eq .Kind "text"}}
+                            <div class="conversation-text">{{.Text}}</div>
+                        {{else if eq .Kind "image"}}
+                            <div class="image-meta">{{.Summary}}</div>
+                            {{if .URL}}<img class="conversation-image" src="{{.URL}}" alt="{{.Summary}}">{{end}}
+                        {{else}}
+                            <div class="content-placeholder">{{.Summary}}</div>
+                        {{end}}
+                    {{end}}
+                {{else}}
+                    <div class="content-placeholder">_(empty message)_</div>
+                {{end}}
+            </div>
+            {{end}}
+        </div>
+        {{end}}
+
+        {{if .BackendConversation}}
+        <div class="section">
+            <h2>Conversation (Backend Request)</h2>
+            {{range .BackendConversation}}
+            <div class="conversation-message">
+                <div class="conversation-role">{{.Role}}</div>
+                {{if .Parts}}
+                    {{range .Parts}}
+                        {{if eq .Kind "text"}}
+                            <div class="conversation-text">{{.Text}}</div>
+                        {{else if eq .Kind "image"}}
+                            <div class="image-meta">{{.Summary}}</div>
+                            {{if .URL}}<img class="conversation-image" src="{{.URL}}" alt="{{.Summary}}">{{end}}
+                        {{else}}
+                            <div class="content-placeholder">{{.Summary}}</div>
+                        {{end}}
+                    {{end}}
+                {{else}}
+                    <div class="content-placeholder">_(empty message)_</div>
+                {{end}}
+            </div>
+            {{end}}
+        </div>
+        {{end}}
 
         {{if .FrontendRequest}}
         <div class="section">

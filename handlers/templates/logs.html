@@ -126,6 +126,20 @@
             font-family: "Courier New", monospace;
             font-size: 12px;
         }
+        .preview-cell {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .preview-thumb {
+            max-width: 32px;
+            max-height: 32px;
+            border-radius: 4px;
+            border: 1px solid #dfe6e9;
+            background: #fff;
+            object-fit: contain;
+        }
         .pagination {
             display: flex;
             justify-content: center;
@@ -203,7 +217,14 @@
                             {{if .Stream}}<span class="stream-badge">STREAM</span>{{end}}
                             {{if .Error}}<span class="error-badge">ERROR</span>{{end}}
                         </td>
-                        <td class="truncated">{{truncate .LastMessage 80}}</td>
+                        <td class="truncated">
+                            <div class="preview-cell">
+                                {{range .PreviewParts}}
+                                    {{if eq .Kind "image"}}{{if .URL}}<img class="preview-thumb" src="{{.URL}}" alt="{{.Summary}}" title="{{.Summary}}">{{end}}{{end}}
+                                {{end}}
+                                <span>{{truncate .Preview 80}}</span>
+                            </div>
+                        </td>
                     </tr>
                     {{else}}
                     <tr>

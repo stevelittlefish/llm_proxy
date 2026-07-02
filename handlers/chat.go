@@ -212,7 +212,9 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (h *ChatHandler) logRequest(startTime time.Time, model string, stream bool, originalMessages []models.Message, response string, statusCode int, errMsg string, frontendReq string, frontendResp string, backendReq string, backendResp string, backendURL string, originalLastMessage string) {
 	latency := time.Since(startTime).Milliseconds()
 
-	// Extract prompt from original messages (before injection)
+	// Extract prompt from original messages (before injection). Prefer the raw
+	// frontend request so multimodal content parts are summarized instead of
+	// disappearing from log previews.
 	var prompt strings.Builder
 	for _, msg := range originalMessages {
 		prompt.WriteString(msg.Role)
@@ -220,13 +222,21 @@ func (h *ChatHandler) logRequest(startTime time.Time, model string, stream bool,
 		prompt.WriteString(msg.Content)
 		prompt.WriteString("\n")
 	}
+	promptText := prompt.String()
+	if summary := marshalLogMessagesSummary(frontendReq); summary != "" {
+		promptText = summary
+	}
+	lastMessage := originalLastMessage
+	if summary := lastMessageSummaryFromRaw(frontendReq); summary != "" {
+		lastMessage = summary
+	}
 
 	entry := database.LogEntry{
 		Timestamp:        startTime,
 		Endpoint:         "/api/chat",
 		Method:           "POST",
 		Model:            model,
-		Prompt:           prompt.String(),
+		Prompt:           promptText,
 		Response:         response,
 		StatusCode:       statusCode,
 		LatencyMs:        latency,
@@ -239,7 +249,7 @@ func (h *ChatHandler) logRequest(startTime time.Time, model string, stream bool,
 		FrontendResponse: frontendResp,
 		BackendRequest:   backendReq,
 		BackendResponse:  backendResp,
-		LastMessage:      originalLastMessage,
+		LastMessage:      lastMessage,
 	}
 
 	if err := h.db.Log(entry); err != nil {

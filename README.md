@@ -427,6 +427,12 @@ With the helper script:
 ./client.sh --openai
 ```
 
+To test a vision-capable backend through the OpenAI-compatible API, send an image file as the first user message:
+
+```bash
+./client.sh --openai --image images/example.png
+```
+
 The client reads the server host and port from the same config file as the proxy. It auto-selects the first model returned by the proxy, or you can choose one explicitly:
 
 ```bash

@@ -143,8 +143,12 @@ func (h *WebHandler) IndexHandler(w http.ResponseWriter, r *http.Request) {
 	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
 
 	// Prepare template data
+	viewEntries := make([]logListEntry, 0, len(entries))
+	for _, entry := range entries {
+		viewEntries = append(viewEntries, makeLogListEntry(entry))
+	}
 	data := struct {
-		Entries     []database.LogEntry
+		Entries     []logListEntry
 		CurrentPage int
 		TotalPages  int
 		TotalCount  int64
@@ -153,7 +157,7 @@ func (h *WebHandler) IndexHandler(w http.ResponseWriter, r *http.Request) {
 		PrevPage    int
 		NextPage    int
 	}{
-		Entries:     entries,
+		Entries:     viewEntries,
 		CurrentPage: page,
 		TotalPages:  totalPages,
 		TotalCount:  total,
@@ -262,12 +266,18 @@ func (h *WebHandler) DetailsHandler(w http.ResponseWriter, r *http.Request) {
 	// Prepare template data with navigation
 	data := struct {
 		*database.LogEntry
-		NextID *int64
-		PrevID *int64
+		NextID               *int64
+		PrevID               *int64
+		PromptDisplay        string
+		FrontendConversation []renderedLogMessage
+		BackendConversation  []renderedLogMessage
 	}{
-		LogEntry: entry,
-		NextID:   nextID,
-		PrevID:   prevID,
+		LogEntry:             entry,
+		NextID:               nextID,
+		PrevID:               prevID,
+		PromptDisplay:        promptDisplayForEntry(entry),
+		FrontendConversation: renderedMessagesFromRaw(entry.FrontendRequest),
+		BackendConversation:  renderedMessagesFromRaw(entry.BackendRequest),
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

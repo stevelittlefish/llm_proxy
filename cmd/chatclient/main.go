@@ -3,14 +3,17 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"mime"
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -21,8 +24,63 @@ type serverConfig struct {
 }
 
 type message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role    string         `json:"role"`
+	Content messageContent `json:"content"`
+}
+
+type messageContent struct {
+	Text  string
+	Parts []contentPart
+}
+
+type contentPart struct {
+	Type     string        `json:"type"`
+	Text     string        `json:"text,omitempty"`
+	ImageURL *imageURLPart `json:"image_url,omitempty"`
+}
+
+type imageURLPart struct {
+	URL string `json:"url"`
+}
+
+func textContent(text string) messageContent {
+	return messageContent{Text: text}
+}
+
+func imageContent(dataURI string) messageContent {
+	return messageContent{Parts: []contentPart{{Type: "image_url", ImageURL: &imageURLPart{URL: dataURI}}}}
+}
+
+func (c messageContent) MarshalJSON() ([]byte, error) {
+	if c.Parts != nil {
+		return json.Marshal(c.Parts)
+	}
+	return json.Marshal(c.Text)
+}
+
+func (c *messageContent) UnmarshalJSON(data []byte) error {
+	var text string
+	if err := json.Unmarshal(data, &text); err == nil {
+		c.Text = text
+		c.Parts = nil
+		return nil
+	}
+	var parts []contentPart
+	if err := json.Unmarshal(data, &parts); err != nil {
+		return err
+	}
+	c.Text = ""
+	for _, part := range parts {
+		if part.Type == "" || part.Type == "text" {
+			c.Text += part.Text
+		}
+	}
+	c.Parts = parts
+	return nil
+}
+
+func (c messageContent) String() string {
+	return c.Text
 }
 
 type ollamaChatRequest struct {
@@ -57,10 +115,14 @@ func main() {
 	baseURL := flag.String("url", "", "proxy base URL override")
 	openAI := flag.Bool("openai", false, "use OpenAI-compatible API instead of Ollama API")
 	maxTokens := flag.Int("max-tokens", 0, "maximum response tokens to request; omitted when 0")
+	imagePath := flag.String("image", "", "image file to send as the first user message (OpenAI API only)")
 	flag.Parse()
 
 	if *maxTokens < 0 {
 		exitf("max-tokens must be 0 or greater")
+	}
+	if *imagePath != "" && !*openAI {
+		exitf("--image requires --openai because Ollama-compatible chat messages do not support OpenAI content parts")
 	}
 
 	if *baseURL == "" {
@@ -103,6 +165,22 @@ func main() {
 	fmt.Println("Commands: /quit, /clear, /model NAME")
 
 	var history []message
+	if *imagePath != "" {
+		dataURI, err := imageFileDataURI(*imagePath)
+		if err != nil {
+			exitf("failed to load image: %v", err)
+		}
+		history = append(history, message{Role: "user", Content: imageContent(dataURI)})
+		fmt.Printf("Sending initial image message: %s\n", *imagePath)
+		fmt.Print("Assistant> ")
+		reply, err := sendOpenAIChat(client, *baseURL, *model, history, *maxTokens)
+		if err != nil {
+			exitf("initial image request failed: %v", err)
+		}
+		fmt.Println()
+		history = append(history, message{Role: "assistant", Content: textContent(reply)})
+	}
+
 	input := bufio.NewReader(os.Stdin)
 	for {
 		fmt.Print("\nYou> ")
@@ -136,7 +214,7 @@ func main() {
 			continue
 		}
 
-		history = append(history, message{Role: "user", Content: line})
+		history = append(history, message{Role: "user", Content: textContent(line)})
 		fmt.Print("Assistant> ")
 
 		var reply string
@@ -151,7 +229,7 @@ func main() {
 			continue
 		}
 		fmt.Println()
-		history = append(history, message{Role: "assistant", Content: reply})
+		history = append(history, message{Role: "assistant", Content: textContent(reply)})
 	}
 }
 
@@ -188,9 +266,9 @@ func sendOllamaChat(client *http.Client, baseURL string, model string, history [
 		if chunk.Error != "" {
 			return reply.String(), errors.New(chunk.Error)
 		}
-		if chunk.Message.Content != "" {
-			fmt.Print(chunk.Message.Content)
-			reply.WriteString(chunk.Message.Content)
+		if chunk.Message.Content.String() != "" {
+			fmt.Print(chunk.Message.Content.String())
+			reply.WriteString(chunk.Message.Content.String())
 		}
 		if chunk.Done {
 			break
@@ -237,17 +315,32 @@ func sendOpenAIChat(client *http.Client, baseURL string, model string, history [
 			continue
 		}
 		for _, choice := range chunk.Choices {
-			if choice.Delta == nil || choice.Delta.Content == "" {
+			if choice.Delta == nil || choice.Delta.Content.String() == "" {
 				continue
 			}
-			fmt.Print(choice.Delta.Content)
-			reply.WriteString(choice.Delta.Content)
+			fmt.Print(choice.Delta.Content.String())
+			reply.WriteString(choice.Delta.Content.String())
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		return reply.String(), err
 	}
 	return reply.String(), nil
+}
+
+func imageFileDataURI(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	mimeType := mime.TypeByExtension(strings.ToLower(filepath.Ext(path)))
+	if mimeType == "" {
+		mimeType = http.DetectContentType(data)
+	}
+	if !strings.HasPrefix(mimeType, "image/") {
+		return "", fmt.Errorf("%s is %s, not an image", path, mimeType)
+	}
+	return fmt.Sprintf("data:%s;base64,%s", mimeType, base64.StdEncoding.EncodeToString(data)), nil
 }
 
 func postJSON(client *http.Client, url string, body any) (*http.Response, error) {
